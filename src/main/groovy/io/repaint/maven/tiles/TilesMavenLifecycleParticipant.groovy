@@ -293,6 +293,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		List<MavenProject> allProjects = mavenSession.getProjects()
 		if (allProjects != null) {
+			Set<String> parentsAppliedWithTiles = new HashSet<String>()
 			for (MavenProject currentProject : allProjects) {
 				List<String> subModules = currentProject.getModules()
 				boolean containsTiles = currentProject.getPluginArtifactMap().keySet().contains(TILEPLUGIN_KEY)
@@ -313,6 +314,20 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 					}
 
 					orchestrateMerge(mavenSession, currentProject)
+					if (!parentsAppliedWithTiles.empty && (!applyBeforeParent || !parentsAppliedWithTiles.contains(applyBeforeParent))) {
+						//applyBeforeParent must not be set to different parents in a reactor build. We would end up
+						//with different tiles applied in multiple positions in a parent hierarchy if that parent
+						//is a parent of the current module, too. We allow it if no explicit parent was specified and
+						//the previously specified parent is not in the hierarchy
+						for (MavenProject checkParent = currentProject.parent; checkParent != null; checkParent = checkParent.parent) {
+							if (parentsAppliedWithTiles.contains(modelGa(checkParent.model))) {
+								throw new MavenExecutionException("<applyBefore>${modelGa(checkParent.model)}</applyBefore> has already been used in another module and it's a parent of this module, too, so you also need to use it for this module.", currentProject.getFile())
+							}
+						}
+					}
+					if (applyBeforeParent) {
+						parentsAppliedWithTiles.add(applyBeforeParent)
+					}
 
 					// did we expect but not get a distribution artifact repository?
 					if (!currentProject.distributionManagementArtifactRepository) {
