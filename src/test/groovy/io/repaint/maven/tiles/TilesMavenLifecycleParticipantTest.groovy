@@ -16,8 +16,11 @@
  **********************************************************************************************************************/
 package io.repaint.maven.tiles
 
+import static groovy.test.GroovyAssert.shouldFail
+import static org.mockito.Mockito.mock
 import groovy.transform.CompileStatic
 import io.repaint.maven.tiles.isolators.MavenVersionIsolator
+
 import org.apache.maven.MavenExecutionException
 import org.apache.maven.artifact.Artifact
 import org.apache.maven.artifact.repository.ArtifactRepository
@@ -42,9 +45,6 @@ import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.runners.MockitoJUnitRunner
-
-import static groovy.test.GroovyAssert.shouldFail
-import static org.mockito.Mockito.mock
 
 /**
  * If testMergeTile fails with java.io.FileNotFoundException: src/test/resources/licenses-tiles-pom.xml
@@ -82,7 +82,7 @@ public class TilesMavenLifecycleParticipantTest {
 
 		mockResolver = mock(ArtifactResolver.class)
 		logger = [
-		  warn: { String msg -> println msg },
+			warn: { String msg -> println msg },
 			info:{ String msg -> println msg },
 			debug: { String msg -> println msg },
 			isDebugEnabled: { return true }
@@ -101,25 +101,23 @@ public class TilesMavenLifecycleParticipantTest {
 
 	protected MavenVersionIsolator createFakeIsolate() {
 		return new MavenVersionIsolator() {
-			@Override
-			void resolveVersionRange(Artifact tileArtifact) {
-			}
-
-			@Override
-			ModelProblemCollector createModelProblemCollector() {
-				return [
-					add: { req ->
-
+					@Override
+					void resolveVersionRange(Artifact tileArtifact) {
 					}
-				] as ModelProblemCollector
-			}
 
-			@Override
-			ModelData createModelData(Model model, File pomFile) {
-				return null
-			}
+					@Override
+					ModelProblemCollector createModelProblemCollector() {
+						return [
+							add: { req ->
+							}
+						] as ModelProblemCollector
+					}
 
-		}
+					@Override
+					ModelData createModelData(Model model, File pomFile) {
+						return null
+					}
+				}
 	}
 
 	public Artifact getTileTestCoordinates() {
@@ -263,13 +261,13 @@ public class TilesMavenLifecycleParticipantTest {
 	@Test
 	public void injectModelLayerTiles() {
 		TileModel sessionLicenseTile = new TileModel(new File('src/test/resources/session-license-tile.xml'),
-			participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:session-license:1', null))
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:session-license:1', null))
 
 		TileModel extendedSyntaxTile = new TileModel(new File('src/test/resources/extended-syntax-tile.xml'),
-			participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:extended-syntax:1', null))
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:extended-syntax:1', null))
 
 		TileModel antrunTile = new TileModel(new File('src/test/resources/antrun1-tile.xml'),
-			participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:antrun1:1', null))
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:antrun1:1', null))
 
 		List<TileModel> tiles = [
 			sessionLicenseTile,
@@ -281,14 +279,16 @@ public class TilesMavenLifecycleParticipantTest {
 		Model pomModel = readModel(pomFile)
 
 		participant = new TilesMavenLifecycleParticipant() {
-			@Override
-			protected void putModelInCache(Model model, ModelBuildingRequest request, File pFile) {
-			}
-		}
+					@Override
+					protected void putModelInCache(Model model, ModelBuildingRequest request, File pFile) {
+					}
+				}
 
 		stuffParticipant()
 
-		participant.injectTilesIntoParentStructure(new Properties(), tiles, pomModel, [getPomFile: { return pomFile }] as ModelBuildingRequest)
+		participant.injectTilesIntoParentStructure(
+				[getGroupId: { pomModel.groupId }, getArtifactId: { pomModel.artifactId }, getProperties: { new Properties() } ] as MavenProject,
+				tiles, pomModel, [getPomFile: { return pomFile } ] as ModelBuildingRequest)
 
 		assert pomModel.parent.artifactId == 'session-license'
 		assert sessionLicenseTile.model.parent.artifactId == 'extended-syntax'
@@ -297,18 +297,20 @@ public class TilesMavenLifecycleParticipantTest {
 
 		pomModel.parent = new Parent(groupId: 'io.repaint.tiles', artifactId: 'fake-parent', version: '1')
 
-		participant.injectTilesIntoParentStructure(new Properties(), tiles, pomModel, [getPomFile: { return pomFile }] as ModelBuildingRequest)
+		participant.injectTilesIntoParentStructure(
+				[getGroupId: { pomModel.groupId }, getArtifactId: { pomModel.artifactId }, getProperties: { new Properties() } ] as MavenProject,
+				tiles, pomModel, [getPomFile: { return pomFile } ] as ModelBuildingRequest)
 		assert antrunTile.model.parent.artifactId == 'fake-parent'
 	}
 
 	@Test
 	public void testNoTiles() throws MavenExecutionException {
 		participant = new TilesMavenLifecycleParticipant() {
-			@Override
-			protected TileModel loadModel(Artifact artifact) throws MavenExecutionException {
-				return new TileModel(model:new Model())
-			}
-		}
+					@Override
+					protected TileModel loadModel(Artifact artifact) throws MavenExecutionException {
+						return new TileModel(model:new Model())
+					}
+				}
 
 		stuffParticipant()
 
@@ -346,17 +348,17 @@ public class TilesMavenLifecycleParticipantTest {
 
 	protected resetParticipantToLoadTilesFromDisk() {
 		participant = new TilesMavenLifecycleParticipant() {
-			@Override
-			protected void thunkModelBuilder(MavenProject project1) {
-			}
+					@Override
+					protected void thunkModelBuilder(MavenProject project1) {
+					}
 
-			@Override
-			protected Artifact resolveTile(MavenSession mavenSession, Artifact tileArtifact) throws MavenExecutionException {
-				tileArtifact.file = new File("src/test/resources/${tileArtifact.artifactId}.xml")
+					@Override
+					protected Artifact resolveTile(MavenSession mavenSession, Artifact tileArtifact) throws MavenExecutionException {
+						tileArtifact.file = new File("src/test/resources/${tileArtifact.artifactId}.xml")
 
-				return tileArtifact
-			}
-		}
+						return tileArtifact
+					}
+				}
 
 		stuffParticipant()
 	}
