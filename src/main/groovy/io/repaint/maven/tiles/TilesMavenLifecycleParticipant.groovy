@@ -436,10 +436,12 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 						Model model = modelProcessor.read(input, options)
 
 						use(GavUtil) {
-							if (model.artifactId == project.artifactId && model.realGroupId == project.groupId
-							&& model.realVersion == project.originalModel.realVersion && model.packaging == project.packaging) {
+							if (model.artifactId == project.artifactId
+									&& model.realGroupId == project.groupId
+									&& model.realVersion == project.originalModel.realVersion
+									&& model.packaging == project.packaging) {
 								// we're at the first (project) level. Apply tiles here if no explicit parent is set
-								if (!applyBeforeParent) {
+								if (!applyBeforeParent || modelRealGa(model) == applyBeforeParent) {
 									injectTilesIntoParentStructure(project, tiles, model, request)
 									tilesInjected = true
 								}
@@ -481,7 +483,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 			ModelBuildingResult finalModel = modelBuilder.build(request, interimBuild)
 			if (!tilesInjected && applyBeforeParent) {
-				throw new MavenExecutionException("Cannot apply tiles, the expected parent ${applyBeforeParent} is not found.",
+				throw new MavenExecutionException("Cannot apply tiles for ${project.groupId}:${project.artifactId}, the expected parent ${applyBeforeParent} is not found.",
 				project.file)
 			}
 			copyModel(project, finalModel.effectiveModel)
@@ -729,7 +731,10 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			configuration.getChild("tiles")?.children?.each { Xpp3Dom tile ->
 				processConfigurationTile(model, tile.value, pomFile)
 			}
-			applyBeforeParent = configuration.getChild("applyBefore")?.value;
+			applyBeforeParent = configuration.getChild("applyBefore")?.value
+
+			// empty value -> used to explicitly use the current project
+			applyBeforeParent = applyBeforeParent?.empty ? null : applyBeforeParent
 		}
 	}
 
