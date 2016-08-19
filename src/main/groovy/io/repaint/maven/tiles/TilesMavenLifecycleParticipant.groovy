@@ -642,6 +642,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		// no setting parent, we have generated an effective model which is now all copied in
 		Model projectModel = project.model
 		projectModel.build = newModel.build
+		projectModel.reporting = newModel.reporting
 		projectModel.dependencyManagement = newModel.dependencyManagement
 		projectModel.dependencies = newModel.dependencies
 		projectModel.repositories = newModel.repositories
