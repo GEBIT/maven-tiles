@@ -50,6 +50,7 @@ import org.apache.maven.model.Parent
 import org.apache.maven.model.Plugin
 import org.apache.maven.model.PluginManagement
 import org.apache.maven.model.Repository
+import org.apache.maven.model.Resource
 import org.apache.maven.model.building.DefaultModelBuilder
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuilder
@@ -62,8 +63,16 @@ import org.apache.maven.model.io.ModelParseException
 import org.apache.maven.model.resolution.InvalidRepositoryException
 import org.apache.maven.model.resolution.ModelResolver
 import org.apache.maven.model.resolution.UnresolvableModelException
+import org.apache.maven.project.DefaultProjectBuildingRequest
 import org.apache.maven.project.MavenProject
+import org.apache.maven.project.ProjectBuilder
 import org.apache.maven.project.ProjectBuildingHelper
+import org.apache.maven.project.ProjectBuildingRequest
+import org.apache.maven.project.ProjectBuildingResult
+import org.apache.maven.shared.filtering.MavenFileFilter
+import org.apache.maven.shared.filtering.MavenFileFilterRequest
+import org.apache.maven.shared.filtering.MavenResourcesExecution
+import org.apache.maven.shared.filtering.MavenResourcesFiltering
 import org.codehaus.plexus.component.annotations.Component
 import org.codehaus.plexus.component.annotations.Requirement
 import org.codehaus.plexus.interpolation.PropertiesBasedValueSource
@@ -72,6 +81,7 @@ import org.codehaus.plexus.logging.Logger
 import org.codehaus.plexus.util.xml.Xpp3Dom
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException
 import org.xml.sax.SAXParseException
+
 
 /**
  * Fetches all dependencies defined in the POM `configuration`.
@@ -105,6 +115,15 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	@Requirement
 	ProjectBuildingHelper projectBuildingHelper
+
+	@Requirement
+	MavenFileFilter mavenFileFilter
+
+	@Requirement
+	MavenResourcesFiltering mavenResourcesFiltering
+
+	@Requirement
+	ProjectBuilder projectBuilder
 
 	/**
 	 * Component used to create a repository.
@@ -161,6 +180,41 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		return getArtifactFromCoordinates(artifact.groupId, artifact.artifactId, 'pom', '', artifact.version)
 	}
 
+	protected File getTileFromProject(MavenSession mavenSession, MavenProject tileProject) {
+		Xpp3Dom configuration = tileProject.build?.plugins?.
+				find({ Plugin plugin ->
+					return plugin.groupId == TILEPLUGIN_GROUP &&
+							plugin.artifactId == TILEPLUGIN_ARTIFACT
+				})?.configuration as Xpp3Dom
+
+		File baseTile = new File(tileProject.basedir, AbstractTileMojo.TILE_POM)
+		if (configuration?.getChild("filtering")?.value == "true") {
+			// tile.xml needs to be filtered
+			File processedTileDirectory = new File(tileProject.build.directory + "/generated-sources", "tiles")
+			File processedTile = new File(processedTileDirectory, AbstractTileMojo.TILE_POM)
+
+			Resource tileResource = new Resource()
+			tileResource.setDirectory(tileProject.basedir.absolutePath);
+			tileResource.includes.add(AbstractTileMojo.TILE_POM)
+			tileResource.setFiltering(true)
+
+			MavenFileFilterRequest req = new MavenFileFilterRequest(baseTile, processedTile, true,
+					tileProject, [], true, "UTF-8", mavenSession, new Properties())
+			req.setDelimiters(["@"] as LinkedHashSet)
+
+			MavenResourcesExecution execution = new MavenResourcesExecution(
+					[tileResource], processedTileDirectory, "UTF-8",
+					mavenFileFilter.getDefaultFilterWrappers(req),
+					tileProject.basedir, mavenResourcesFiltering.defaultNonFilteredFileExtensions)
+
+			mavenResourcesFiltering.filterResources(execution)
+
+			return new File(processedTileDirectory, AbstractTileMojo.TILE_POM)
+		} else {
+			return new File(tileProject.file.parent, AbstractTileMojo.TILE_POM)
+		}
+	}
+
 	protected Artifact resolveTile(MavenSession mavenSession, Artifact tileArtifact) throws MavenExecutionException {
 		// try to find tile from reactor
 		if (mavenSession != null) {
@@ -170,7 +224,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 					// when loading from reactor ignore version
 					if (currentProject.groupId == tileArtifact.groupId && currentProject.artifactId == tileArtifact.artifactId) {
 						tileArtifact.version = currentProject.version
-						tileArtifact.file = new File(currentProject.file.parent, "tile.xml")
+						tileArtifact.file = getTileFromProject(mavenSession, currentProject)
 						return tileArtifact
 					}
 				}
@@ -185,7 +239,17 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 			// When resolving from workspace (e.g. m2e) we might receive the path to pom.xml instead of the attached tile
 			if (tileArtifact.file && tileArtifact.file.name == "pom.xml") {
-				tileArtifact.file = new File(tileArtifact.file.parent, "tile.xml")
+				// to enable filtering we need to create a project first
+				ProjectBuildingRequest prjRequest = new DefaultProjectBuildingRequest(mavenSession.projectBuildingRequest)
+				prjRequest.project = null
+				ProjectBuildingResult prjResult = projectBuilder.build(tileArtifact.file, prjRequest)
+				if (prjResult.project) {
+					tileArtifact.file = getTileFromProject(mavenSession, prjResult.project)
+				} else {
+					// fallback: use tile as-is
+					tileArtifact.file = new File(tileArtifact.file.parent, "tile.xml")
+				}
+
 				if (!tileArtifact.file.exists()) {
 					throw new MavenExecutionException("Tile ${artifactGav(tileArtifact)} cannot be resolved.",
 					tileArtifact.getFile())
@@ -437,9 +501,9 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 						use(GavUtil) {
 							if (model.artifactId == project.artifactId
-									&& model.realGroupId == project.groupId
-									&& model.realVersion == project.originalModel.realVersion
-									&& model.packaging == project.packaging) {
+							&& model.realGroupId == project.groupId
+							&& model.realVersion == project.originalModel.realVersion
+							&& model.packaging == project.packaging) {
 								// we're at the first (project) level. Apply tiles here if no explicit parent is set
 								if (!applyBeforeParent || modelRealGa(model) == applyBeforeParent) {
 									injectTilesIntoParentStructure(project, tiles, model, request)
