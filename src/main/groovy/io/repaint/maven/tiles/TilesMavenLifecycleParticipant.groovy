@@ -363,20 +363,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				boolean containsTiles = currentProject.getPluginArtifactMap().keySet().contains(TILEPLUGIN_KEY)
 
 				if (containsTiles) {
-					Plugin plugin = currentProject.getPlugin(TILEPLUGIN_KEY);
-					if (plugin.isInherited() && subModules != null && subModules.size() > 0) {
-						Model currentModel = currentProject.getModel();
-						for (MavenProject otherProject : allProjects) {
-							Parent otherParent = otherProject.getModel().getParent()
-							if(otherParent!=null && parentGav(otherParent).equals(modelGav(currentModel))) {
-								//We're in project with children, fail the build immediate. This is both an opinionated choice, but also
-								//one of project health - with tile definitions in parent POMs usage of -pl, -am, and -amd maven options
-								//are limited.
-								throw new MavenExecutionException("Usage of maven-tiles prohibited from multi-module builds where reactor is used as parent.", currentProject.getFile())
-							}
-						}
-					}
-
 					orchestrateMerge(mavenSession, currentProject)
 					if (!parentsAppliedWithTiles.empty && (!applyBeforeParent || !parentsAppliedWithTiles.contains(applyBeforeParent))) {
 						//applyBeforeParent must not be set to different parents in a reactor build. We would end up
