@@ -180,6 +180,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		return getArtifactFromCoordinates(artifact.groupId, artifact.artifactId, 'pom', '', artifact.version)
 	}
 
+	@CompileStatic(TypeCheckingMode.SKIP)
 	protected File getTileFromProject(MavenSession mavenSession, MavenProject tileProject) {
 		Xpp3Dom configuration = tileProject.build?.plugins?.
 				find({ Plugin plugin ->
@@ -207,7 +208,13 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 					mavenFileFilter.getDefaultFilterWrappers(req),
 					tileProject.basedir, mavenResourcesFiltering.defaultNonFilteredFileExtensions)
 
-			mavenResourcesFiltering.filterResources(execution)
+			Logger old = mavenResourcesFiltering.logger
+			try {
+				mavenResourcesFiltering.enableLogging(new DummyLogger(mavenResourcesFiltering.logger))
+				mavenResourcesFiltering.filterResources(execution)
+			} finally {
+				mavenResourcesFiltering.enableLogging(old)
+			}
 
 			return new File(processedTileDirectory, AbstractTileMojo.TILE_POM)
 		} else {

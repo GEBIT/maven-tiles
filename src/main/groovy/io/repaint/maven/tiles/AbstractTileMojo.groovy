@@ -1,5 +1,7 @@
 package io.repaint.maven.tiles
 import groovy.transform.CompileStatic
+import groovy.transform.TypeCheckingMode
+
 import org.apache.maven.execution.MavenSession
 import org.apache.maven.model.Resource
 import org.apache.maven.plugin.AbstractMojo
@@ -25,7 +27,7 @@ abstract class AbstractTileMojo extends AbstractMojo {
 
 	@Parameter(property = "tiles", readonly = false, required = false)
 	List<String> tiles
-	
+
 	@Parameter(property = "applyBefore", readonly = false, required = false)
 	String applyBefore;
 
@@ -50,6 +52,7 @@ abstract class AbstractTileMojo extends AbstractMojo {
 	@Component
 	MavenResourcesFiltering mavenResourcesFiltering
 
+	@CompileStatic(TypeCheckingMode.SKIP)
 	File getTile() {
 		File baseTile = new File(project.basedir, TILE_POM)
 		if (filtering) {
@@ -70,7 +73,13 @@ abstract class AbstractTileMojo extends AbstractMojo {
 					mavenFileFilter.getDefaultFilterWrappers(req),
 					project.basedir, mavenResourcesFiltering.defaultNonFilteredFileExtensions)
 
-			mavenResourcesFiltering.filterResources(execution)
+			Logger old = mavenResourcesFiltering.logger
+			try {
+				mavenResourcesFiltering.enableLogging(new DummyLogger(mavenResourcesFiltering.logger))
+				mavenResourcesFiltering.filterResources(execution)
+			} finally {
+				mavenResourcesFiltering.enableLogging(old)
+			}
 
 			return new File(processedTileDirectory, TILE_POM)
 		} else {
