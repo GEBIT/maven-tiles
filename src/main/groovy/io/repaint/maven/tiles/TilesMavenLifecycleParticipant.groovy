@@ -80,6 +80,7 @@ import org.codehaus.plexus.interpolation.StringSearchInterpolator
 import org.codehaus.plexus.logging.Logger
 import org.codehaus.plexus.util.xml.Xpp3Dom
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException
+import org.eclipse.aether.RepositoryCache;
 import org.xml.sax.SAXParseException
 
 
@@ -247,11 +248,19 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			// When resolving from workspace (e.g. m2e) we might receive the path to pom.xml instead of the attached tile
 			if (tileArtifact.file && tileArtifact.file.name == "pom.xml") {
 				// to enable filtering we need to create a project first
-				ProjectBuildingRequest prjRequest = new DefaultProjectBuildingRequest(mavenSession.projectBuildingRequest)
-				prjRequest.project = null
-				ProjectBuildingResult prjResult = projectBuilder.build(tileArtifact.file, prjRequest)
-				if (prjResult.project) {
-					tileArtifact.file = getTileFromProject(mavenSession, prjResult.project)
+				RepositoryCache cache = mavenSession.getRepositorySession().getCache();
+				MavenProject tileProject = (MavenProject) cache.get(mavenSession.getRepositorySession(), "tile:project:" + tileArtifact.file);
+				if (!tileProject) {
+					ProjectBuildingRequest prjRequest = new DefaultProjectBuildingRequest(mavenSession.projectBuildingRequest)
+							prjRequest.project = null
+							prjRequest.setResolveDependencies(false)
+							ProjectBuildingResult prjResult = projectBuilder.build(tileArtifact.file, prjRequest)
+					tileProject = prjResult.project
+					// project building might be expensive, so cache it in a way that will cache it also for m2e
+					cache.put(mavenSession.getRepositorySession(), "tile:project:" + tileArtifact.file, tileProject);
+				}
+				if (tileProject) {
+					tileArtifact.file = getTileFromProject(mavenSession, tileProject)
 				} else {
 					// fallback: use tile as-is
 					tileArtifact.file = new File(tileArtifact.file.parent, "tile.xml")
