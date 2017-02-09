@@ -80,7 +80,7 @@ import org.codehaus.plexus.interpolation.StringSearchInterpolator
 import org.codehaus.plexus.logging.Logger
 import org.codehaus.plexus.util.xml.Xpp3Dom
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException
-import org.eclipse.aether.RepositoryCache;
+import org.eclipse.aether.RepositoryCache
 import org.xml.sax.SAXParseException
 
 
@@ -160,9 +160,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	 * We store the groupId:artifactId -> Artifact of those tiles we have discovered in our meanderings through
 	 * the
 	 */
-	Map<String, ArtifactModel> processedTiles = [:]
-	List<String> tileDiscoveryOrder = []
-	Map<String, Artifact> unprocessedTiles = [:]
 	String applyBeforeParent;
 
 	/**
@@ -252,9 +249,9 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				MavenProject tileProject = (MavenProject) cache.get(mavenSession.getRepositorySession(), "tile:project:" + tileArtifact.file);
 				if (!tileProject) {
 					ProjectBuildingRequest prjRequest = new DefaultProjectBuildingRequest(mavenSession.projectBuildingRequest)
-							prjRequest.project = null
-							prjRequest.setResolveDependencies(false)
-							ProjectBuildingResult prjResult = projectBuilder.build(tileArtifact.file, prjRequest)
+					prjRequest.project = null
+					prjRequest.setResolveDependencies(false)
+					ProjectBuildingResult prjResult = projectBuilder.build(tileArtifact.file, prjRequest)
 					tileProject = prjResult.project
 					// project building might be expensive, so cache it in a way that will cache it also for m2e
 					cache.put(mavenSession.getRepositorySession(), "tile:project:" + tileArtifact.file, tileProject);
@@ -436,27 +433,39 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	 */
 	protected void orchestrateMerge(MavenSession mavenSession, MavenProject project) throws MavenExecutionException {
 		// Clear collected tiles from previous project in reactor
-		processedTiles.clear();
-		tileDiscoveryOrder.clear();
-		unprocessedTiles.clear();
+		TileData tileData = new TileData()
+		mavenSession.repositorySession.getData().set("$TileData", tileData)
 
 		// collect the first set of tiles
-		parseConfiguration(project.model, project.getFile(), true)
+		parseConfiguration(mavenSession, project.model, project.getFile(), true)
 
 		// collect any unprocessed tiles, and process them causing them to potentially load more unprocessed ones
 		loadAllDiscoveredTiles(mavenSession)
 
 		// don't do anything if there are no tiles
-		if (processedTiles) {
-			thunkModelBuilder(project)
+		if (tileData.processedTiles) {
+			thunkModelBuilder(mavenSession, project)
 		}
 	}
 
-
+	/**
+	 * Get the TileData from the passed MavenSession. It will be put there in orchestrateMerge
+	 * @param mavenSession
+	 * @return
+	 */
+	protected static TileData getTileData(MavenSession mavenSession) throws MavenExecutionException {
+		TileData tileData = (TileData) mavenSession.repositorySession.getData().get("$TileData")
+		if (tileData == null) {
+			throw new MavenExecutionException("No tiles associated with current MavenSession.",
+			mavenSession.currentProject.file)
+		}
+		return tileData
+	}
 
 	@CompileStatic(TypeCheckingMode.SKIP)
-	protected void thunkModelBuilder(MavenProject project) {
-		List<TileModel> tiles = processedTiles.values().collect({it.tileModel})
+	protected void thunkModelBuilder(MavenSession mavenSession, MavenProject project) {
+		TileData tileData = getTileData(mavenSession)
+		List<TileModel> tiles = tileData.processedTiles.values().collect({it.tileModel})
 
 		if (!tiles) return
 
@@ -752,43 +761,44 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	}
 
 	protected void loadAllDiscoveredTiles(MavenSession mavenSession) throws MavenExecutionException {
-		while (unprocessedTiles.size() > 0) {
-			String unresolvedTile = unprocessedTiles.keySet().iterator().next()
+		TileData tileData = getTileData(mavenSession)
+		while (tileData.unprocessedTiles.size() > 0) {
+			String unresolvedTile = tileData.unprocessedTiles.keySet().iterator().next()
 
-			Artifact resolvedTile = resolveTile(mavenSession, unprocessedTiles.remove(unresolvedTile))
+			Artifact resolvedTile = resolveTile(mavenSession, tileData.unprocessedTiles.remove(unresolvedTile))
 
 			TileModel tileModel = loadModel(resolvedTile)
 
 			// ensure we have resolved the tile (it could come from a non-tile model)
 			if (tileModel) {
-				processedTiles.put(artifactName(resolvedTile), new ArtifactModel(resolvedTile, tileModel))
-				parseForExtendedSyntax(tileModel, resolvedTile.getFile())
+				tileData.processedTiles.put(artifactName(resolvedTile), new ArtifactModel(resolvedTile, tileModel))
+				parseForExtendedSyntax(mavenSession, tileModel, resolvedTile.getFile())
 			}
 		}
 
-		ensureAllTilesDiscoveredAreAccountedFor()
+		ensureAllTilesDiscoveredAreAccountedFor(tileData)
 	}
 
 	/**
 	 * removes all invalid tiles from the discovery order
 	 */
-	void ensureAllTilesDiscoveredAreAccountedFor() {
+	void ensureAllTilesDiscoveredAreAccountedFor(TileData tileData) {
 		List<String> missingTiles = []
 
-		tileDiscoveryOrder.each { String tile ->
-			if (!processedTiles[tile]) {
+		tileData.tileDiscoveryOrder.each { String tile ->
+			if (!tileData.processedTiles[tile]) {
 				missingTiles.add(tile)
 			}
 		}
 
-		tileDiscoveryOrder.removeAll(missingTiles)
+		tileData.tileDiscoveryOrder.removeAll(missingTiles)
 	}
 
 	/**
 	 * Normally used inside the current project's pom file when declaring the tile plugin. People may prefer this
 	 * to use to include tiles however in a tile.xml
 	 */
-	protected void parseConfiguration(Model model, File pomFile, boolean projectModel) {
+	protected void parseConfiguration(MavenSession mavenSession, Model model, File pomFile, boolean projectModel) {
 		Xpp3Dom configuration = model?.build?.plugins?.
 				find({ Plugin plugin ->
 					return plugin.groupId == TILEPLUGIN_GROUP &&
@@ -796,7 +806,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		if (configuration) {
 			configuration.getChild("tiles")?.children?.each { Xpp3Dom tile ->
-				processConfigurationTile(model, tile.value, pomFile)
+				processConfigurationTile(mavenSession, model, tile.value, pomFile)
 			}
 			applyBeforeParent = configuration.getChild("applyBefore")?.value
 
@@ -808,28 +818,28 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	/**
 	 * Used for when we have a TileModel (we have read directly) so we support the extra syntax.
 	 */
-	protected void parseForExtendedSyntax(TileModel model, File pomFile) {
+	protected void parseForExtendedSyntax(MavenSession mavenSession, TileModel model, File pomFile) {
 		model.tiles.each { String tileGav ->
-			processConfigurationTile(model.model, tileGav, pomFile)
+			processConfigurationTile(mavenSession, model.model, tileGav, pomFile)
 		}
 
-		parseConfiguration(model.model, pomFile, false)
+		parseConfiguration(mavenSession, model.model, pomFile, false)
 	}
 
-	protected void processConfigurationTile(Model model, String tileDependencyName, File pomFile) {
+	protected void processConfigurationTile(MavenSession mavenSession, Model model, String tileDependencyName, File pomFile) {
 		Artifact unprocessedTile = turnPropertyIntoUnprocessedTile(tileDependencyName, pomFile)
-
+		TileData tileData = getTileData(mavenSession)
 		String depName = artifactName(unprocessedTile)
 
-		if (!processedTiles.containsKey(depName)) {
-			if (unprocessedTiles.containsKey(depName)) {
+		if (!tileData.processedTiles.containsKey(depName)) {
+			if (tileData.unprocessedTiles.containsKey(depName)) {
 				logger.warn(String.format("tiles-maven-plugin in project %s requested for same tile dependency %s",
 						modelGav(model), artifactGav(unprocessedTile)))
 			} else {
 				logger.debug("Adding tile ${artifactGav(unprocessedTile)}")
 
-				unprocessedTiles.put(depName, unprocessedTile)
-				tileDiscoveryOrder.add(depName)
+				tileData.unprocessedTiles.put(depName, unprocessedTile)
+				tileData.tileDiscoveryOrder.add(depName)
 			}
 		} else {
 			logger.warn(String.format("tiles-maven-plugin in project %s requested for same tile dependency %s",

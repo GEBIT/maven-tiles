@@ -27,6 +27,7 @@ import org.apache.maven.artifact.repository.ArtifactRepository
 import org.apache.maven.artifact.resolver.ArtifactNotFoundException
 import org.apache.maven.artifact.resolver.ArtifactResolutionException
 import org.apache.maven.artifact.resolver.ArtifactResolver
+import org.apache.maven.execution.DefaultMavenExecutionRequest
 import org.apache.maven.execution.MavenSession
 import org.apache.maven.model.Build
 import org.apache.maven.model.Model
@@ -39,6 +40,7 @@ import org.apache.maven.model.io.xpp3.MavenXpp3Reader
 import org.apache.maven.project.MavenProject
 import org.codehaus.plexus.logging.Logger
 import org.codehaus.plexus.util.xml.Xpp3DomBuilder
+import org.eclipse.aether.DefaultRepositorySystemSession
 import org.junit.AfterClass
 import org.junit.Before
 import org.junit.BeforeClass
@@ -314,7 +316,9 @@ public class TilesMavenLifecycleParticipantTest {
 
 		stuffParticipant()
 
-		participant.orchestrateMerge(null, new MavenProject())
+		MavenProject project = new MavenProject()
+		MavenSession session = fakeSessionForProject(project)
+		participant.orchestrateMerge(session, project)
 	}
 
 	@Test
@@ -326,9 +330,10 @@ public class TilesMavenLifecycleParticipantTest {
 		stuffParticipant()
 
 		MavenProject project = new MavenProject(model)
+		MavenSession session = fakeSessionForProject(project)
 
 		Throwable failure = shouldFail {
-			participant.orchestrateMerge(null, project)
+			participant.orchestrateMerge(session, project)
 		}
 
 		assert failure.message == "groupid:artifactid does not have the form group:artifact:version-range or group:artifact:extension:classifier:version-range"
@@ -349,7 +354,7 @@ public class TilesMavenLifecycleParticipantTest {
 	protected resetParticipantToLoadTilesFromDisk() {
 		participant = new TilesMavenLifecycleParticipant() {
 					@Override
-					protected void thunkModelBuilder(MavenProject project1) {
+					protected void thunkModelBuilder(MavenSession mavenSession, MavenProject project1) {
 					}
 
 					@Override
@@ -372,25 +377,33 @@ public class TilesMavenLifecycleParticipantTest {
 		] as MavenProject
 	}
 
+	protected MavenSession fakeSessionForProject(MavenProject project) {
+		MavenSession session = new MavenSession(null, new DefaultRepositorySystemSession(),
+				new DefaultMavenExecutionRequest(), null)
+		session.setProjects([project])
+		return session;
+	}
+
 	@Test
 	public void testTileResolve() {
 		MavenProject project = fakeProjectFromFile("full-tile-load-pom")
-
+		MavenSession session = fakeSessionForProject(project)
 		resetParticipantToLoadTilesFromDisk()
 
-		participant.orchestrateMerge(null, project)
+		participant.orchestrateMerge(session, project)
 
-		assert participant.processedTiles.size() == 4
+		assert TilesMavenLifecycleParticipant.getTileData(session).processedTiles.size() == 4
 	}
 
 	@Test
 	public void testDuplicateTilesIgnored() {
 		MavenProject project = fakeProjectFromFile("duplicate-tile-pom")
+		MavenSession session = fakeSessionForProject(project)
 
 		resetParticipantToLoadTilesFromDisk()
 
-		participant.orchestrateMerge(null, project)
-		assert participant.processedTiles.size() == 4
+		participant.orchestrateMerge(session, project)
+		assert TilesMavenLifecycleParticipant.getTileData(session).processedTiles.size() == 4
 	}
 
 	protected Model createBasicModel() {
