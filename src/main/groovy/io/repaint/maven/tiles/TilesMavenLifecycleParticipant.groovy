@@ -246,22 +246,19 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			if (tileArtifact.file && tileArtifact.file.name == "pom.xml") {
 				// to enable filtering we need to create a project first
 				RepositoryCache cache = mavenSession.getRepositorySession().getCache();
-				MavenProject tileProject = (MavenProject) cache.get(mavenSession.getRepositorySession(), "tile:project:" + tileArtifact.file);
-				if (!tileProject) {
+				File tileEffective = (File) cache.get(mavenSession.getRepositorySession(), "tile:" + tileArtifact.file);
+				if (!tileEffective 
+						|| !tileEffective.exists() 
+						|| tileEffective.lastModified() < tileArtifact.file.lastModified()) {
 					ProjectBuildingRequest prjRequest = new DefaultProjectBuildingRequest(mavenSession.projectBuildingRequest)
 					prjRequest.project = null
 					prjRequest.setResolveDependencies(false)
 					ProjectBuildingResult prjResult = projectBuilder.build(tileArtifact.file, prjRequest)
-					tileProject = prjResult.project
 					// project building might be expensive, so cache it in a way that will cache it also for m2e
-					cache.put(mavenSession.getRepositorySession(), "tile:project:" + tileArtifact.file, tileProject);
+					tileEffective = getTileFromProject(mavenSession, prjResult.project)
+					cache.put(mavenSession.getRepositorySession(), "tile:" + tileArtifact.file, tileEffective);
 				}
-				if (tileProject) {
-					tileArtifact.file = getTileFromProject(mavenSession, tileProject)
-				} else {
-					// fallback: use tile as-is
-					tileArtifact.file = new File(tileArtifact.file.parent, "tile.xml")
-				}
+				tileArtifact.file = tileEffective
 
 				if (!tileArtifact.file.exists()) {
 					throw new MavenExecutionException("Tile ${artifactGav(tileArtifact)} cannot be resolved.",
