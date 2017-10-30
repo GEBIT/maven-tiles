@@ -24,6 +24,9 @@ import static io.repaint.maven.tiles.GavUtil.modelGa
 import static io.repaint.maven.tiles.GavUtil.modelGav
 import static io.repaint.maven.tiles.GavUtil.modelRealGa
 import static io.repaint.maven.tiles.GavUtil.parentGav
+
+import java.util.Map.Entry
+
 import groovy.transform.CompileStatic
 import groovy.transform.TypeCheckingMode
 import io.repaint.maven.tiles.isolators.AetherIsolator
@@ -57,6 +60,7 @@ import org.apache.maven.model.building.ModelBuilder
 import org.apache.maven.model.building.ModelBuildingListener
 import org.apache.maven.model.building.ModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingResult
+import org.apache.maven.model.building.ModelCache
 import org.apache.maven.model.building.ModelProcessor
 import org.apache.maven.model.building.ModelSource2
 import org.apache.maven.model.io.ModelParseException
@@ -220,7 +224,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		}
 	}
 
-	protected Artifact resolveTile(MavenSession mavenSession, Artifact tileArtifact) throws MavenExecutionException {
+	protected Artifact resolveTile(MavenSession mavenSession, MavenProject project, Artifact tileArtifact) throws MavenExecutionException {
 		// try to find tile from reactor
 		if (mavenSession != null) {
 			List<MavenProject> allProjects = mavenSession.getProjects()
@@ -238,6 +242,13 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		try {
 			mavenVersionIsolate.resolveVersionRange(tileArtifact)
+			if (tileArtifact.version.startsWith('$') && project) {
+				// get version from project properties
+				StringSearchInterpolator interpolator = new StringSearchInterpolator()
+				interpolator.addValueSource(new PropertiesBasedValueSource(project.properties))
+				tileArtifact.version = interpolator.interpolate(tileArtifact.version)
+				logger.debug("Interpolated tile ${GavUtil.artifactGav(tileArtifact)} version as ${tileArtifact.version}")
+			}
 
 			// Resolve the .xml file for the tile
 			resolver.resolve(tileArtifact, remoteRepositories, localRepository)
@@ -253,6 +264,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 					ProjectBuildingRequest prjRequest = new DefaultProjectBuildingRequest(mavenSession.projectBuildingRequest)
 					prjRequest.project = null
 					prjRequest.setResolveDependencies(false)
+					prjRequest.userProperties = mavenSession.userProperties
 					ProjectBuildingResult prjResult = projectBuilder.build(tileArtifact.file, prjRequest)
 					// project building might be expensive, so cache it in a way that will cache it also for m2e
 					tileEffective = getTileFromProject(mavenSession, prjResult.project)
@@ -288,11 +300,51 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		return tileArtifact
 	}
+	protected String[] tokenizeWithProperties(String value) {
+		List<String> tokens = new ArrayList();
+		int inProperty = 0;
+		StringBuilder currentValue = new StringBuilder()
+		next: for (int i=0; i<value.length(); ++i) {
+			char c = value.charAt(i)
+			switch (c) {
+				case '$':
+					if ((i+1) < value.length() && value.charAt(i+1) == '{') {
+						++inProperty
+						++i
+						currentValue.append('${')
+						continue next
+					}
+					break
+
+				case '}':
+					if (inProperty > 0) {
+						inProperty--
+					}
+					break
+
+				case ':':
+					if (inProperty <= 0) {
+						tokens.add(currentValue.toString())
+						currentValue = new StringBuilder()
+						continue next
+					}
+					break
+
+				default:
+					break
+			}
+			currentValue.append(c)
+		}
+		if (currentValue.size() > 0) {
+			tokens.add(currentValue.toString())
+		}
+		return tokens.toArray(new String[tokens.size()])
+	}
 
 	protected Artifact turnPropertyIntoUnprocessedTile(String artifactGav, File pomFile)
 	throws MavenExecutionException {
 
-		String[] gav = artifactGav.tokenize(":")
+		String[] gav = tokenizeWithProperties(artifactGav)
 
 		if (gav.size() != 3 && gav.size() != 5) {
 			throw new MavenExecutionException("${artifactGav} does not have the form group:artifact:version-range or group:artifact:extension:classifier:version-range", pomFile)
@@ -369,6 +421,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		if (allProjects != null) {
 			Set<String> parentsAppliedWithTiles = new HashSet<String>()
 			for (MavenProject currentProject : allProjects) {
+
 				List<String> subModules = currentProject.getModules()
 				boolean containsTiles = currentProject.getPluginArtifactMap().keySet().contains(TILEPLUGIN_KEY)
 
@@ -437,7 +490,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		parseConfiguration(mavenSession, project.model, project.getFile(), true)
 
 		// collect any unprocessed tiles, and process them causing them to potentially load more unprocessed ones
-		loadAllDiscoveredTiles(mavenSession)
+		loadAllDiscoveredTiles(mavenSession, project)
 
 		// don't do anything if there are no tiles
 		if (tileData.processedTiles) {
@@ -757,12 +810,12 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		}
 	}
 
-	protected void loadAllDiscoveredTiles(MavenSession mavenSession) throws MavenExecutionException {
+	protected void loadAllDiscoveredTiles(MavenSession mavenSession, MavenProject project) throws MavenExecutionException {
 		TileData tileData = getTileData(mavenSession)
 		while (tileData.unprocessedTiles.size() > 0) {
 			String unresolvedTile = tileData.unprocessedTiles.keySet().iterator().next()
 
-			Artifact resolvedTile = resolveTile(mavenSession, tileData.unprocessedTiles.remove(unresolvedTile))
+			Artifact resolvedTile = resolveTile(mavenSession, project, tileData.unprocessedTiles.remove(unresolvedTile))
 
 			TileModel tileModel = loadModel(resolvedTile)
 
@@ -801,6 +854,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 					return plugin.groupId == TILEPLUGIN_GROUP &&
 							plugin.artifactId == TILEPLUGIN_ARTIFACT})?.configuration as Xpp3Dom
 
+		Properties dependencyProperties = new Properties()
 		if (configuration) {
 			configuration.getChild("tiles")?.children?.each { Xpp3Dom tile ->
 				processConfigurationTile(mavenSession, model, tile.value, pomFile)

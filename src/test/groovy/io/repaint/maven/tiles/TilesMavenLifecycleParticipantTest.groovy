@@ -132,7 +132,7 @@ public class TilesMavenLifecycleParticipantTest {
 		Artifact snapshot = getTileTestCoordinates()
 		System.setProperty(PERFORM_RELEASE, "true")
 		shouldFail(MavenExecutionException) {
-			participant.resolveTile(null, snapshot)
+			participant.resolveTile(null, null, snapshot)
 		}
 	}
 
@@ -147,7 +147,7 @@ public class TilesMavenLifecycleParticipantTest {
 		] as ArtifactResolver
 
 		shouldFail(MavenExecutionException) {
-			participant.resolveTile(null, badbadbad)
+			participant.resolveTile(null, null, badbadbad)
 		}
 		participant.resolver = [
 			resolve: { Artifact artifact, List<ArtifactRepository> remoteRepositories, ArtifactRepository localRepository ->
@@ -156,7 +156,7 @@ public class TilesMavenLifecycleParticipantTest {
 		] as ArtifactResolver
 
 		shouldFail(MavenExecutionException) {
-			participant.resolveTile(null, badbadbad)
+			participant.resolveTile(null, null, badbadbad)
 		}
 	}
 
@@ -358,7 +358,7 @@ public class TilesMavenLifecycleParticipantTest {
 					}
 
 					@Override
-					protected Artifact resolveTile(MavenSession mavenSession, Artifact tileArtifact) throws MavenExecutionException {
+					protected Artifact resolveTile(MavenSession mavenSession, MavenProject project,  Artifact tileArtifact) throws MavenExecutionException {
 						tileArtifact.file = new File("src/test/resources/${tileArtifact.artifactId}.xml")
 
 						return tileArtifact
