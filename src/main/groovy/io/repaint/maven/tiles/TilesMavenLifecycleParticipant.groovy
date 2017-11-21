@@ -752,6 +752,9 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			lastPomFile = tileModel.tilePom
 		}
 
+		// set a special property at the project so we can read out the list of applied tiles
+		pomModel.properties[".applied-tiles"] = tiles.collect { tile -> GavUtil.modelGav(tile.model) }
+
 		lastPom.parent = originalParent
 		logger.debug("Mixed '${modelGav(lastPom)}' with original parent '${parentGav(originalParent)}' as it's  new top level parent.")
 		logger.debug("")
