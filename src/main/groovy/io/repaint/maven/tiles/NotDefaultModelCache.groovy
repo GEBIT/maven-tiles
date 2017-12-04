@@ -1,84 +1,69 @@
 package io.repaint.maven.tiles
 
+import java.lang.reflect.Field
+import java.util.Map
+import java.util.WeakHashMap
+
 import org.apache.maven.execution.MavenSession
 import org.apache.maven.model.building.ModelCache
+import org.eclipse.aether.RepositorySystemSession
+
+import groovy.transform.CompileStatic
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+
+import org.apache.maven.model.building.ModelCache;
+import org.eclipse.aether.RepositoryCache;
+import org.eclipse.aether.RepositorySystemSession;
 
 /**
- * Because the Default one is package private *sigh*
- *
- * We have the org.aether / org.sonatype issue
- *
- * @author: Richard Vowles - https://plus.google.com/+RichardVowles
+ * Implementation of {@link ModelCache} which shares keys with org.apache.maven.repository.internal.DefaultModelCache
+ * and caches the models in the {@link RepositoryCache} of the {@link RepositorySystemSession}.
  */
-class NotDefaultModelCache implements ModelCache {
-	def session
-	def cache
+@CompileStatic
+public class NotDefaultModelCache
+    implements ModelCache
+{
+    private static Class DefaultModelCacheKey_class;
+    private static Constructor DefaultModelCacheKey_new;
 
-	public NotDefaultModelCache(MavenSession mavenSession) {
-		this.session = mavenSession.repositorySession
-		this.cache = mavenSession.repositorySession.cache
-	}
+    static {
+        try {
+            DefaultModelCacheKey_class = Class.forName('org.apache.maven.repository.internal.DefaultModelCache$Key');
+            DefaultModelCacheKey_new = DefaultModelCacheKey_class.getConstructor(String.class, String.class, String.class, String.class);
+			DefaultModelCacheKey_new.accessible = true;
+        } catch (ClassNotFoundException | NoSuchMethodException | SecurityException exc) {
+            throw new RuntimeException("Failed to access DefaultModelCache.Key", exc);
+        }
+    }
 
-	public Object get( String groupId, String artifactId, String version, String tag )
-	{
-		return cache.get( session, new Key( groupId, artifactId, version, tag ) );
-	}
+    private final RepositorySystemSession session;
 
-	public void put( String groupId, String artifactId, String version, String tag, Object data )
-	{
-		cache.put( session, new Key( groupId, artifactId, version, tag ), data );
-	}
+    private final RepositoryCache cache;
 
-	static class Key
-	{
+    public NotDefaultModelCache( RepositorySystemSession session )
+    {
+        this.session = session;
+        this.cache = session.getCache();
+    }
 
-		private final String groupId;
+    public Object get( String groupId, String artifactId, String version, String tag )
+    {
+        return cache.get( session, createKey( groupId, artifactId, version, tag ) );
+    }
 
-		private final String artifactId;
+    public void put( String groupId, String artifactId, String version, String tag, Object data )
+    {
+        cache.put( session, createKey( groupId, artifactId, version, tag ), data );
+    }
 
-		private final String version;
-
-		private final String tag;
-
-		private final int hash;
-
-		public Key( String groupId, String artifactId, String version, String tag )
-		{
-			this.groupId = groupId;
-			this.artifactId = artifactId;
-			this.version = version;
-			this.tag = tag;
-
-			int h = 17;
-			h = h * 31 + this.groupId.hashCode();
-			h = h * 31 + this.artifactId.hashCode();
-			h = h * 31 + this.version.hashCode();
-			h = h * 31 + this.tag.hashCode();
-			hash = h;
+    static Object createKey( String groupId, String artifactId, String version, String tag ) {
+        try {
+            return DefaultModelCacheKey_new.newInstance(groupId, artifactId, version, tag);
+        } catch (InstantiationException | IllegalAccessException | IllegalArgumentException
+                | InvocationTargetException exc) {
+            throw new RuntimeException("Failed to create DefaultModelCache.Key", exc);
 		}
-
-		@Override
-		public boolean equals( Object obj )
-		{
-			if ( this.is(obj) )
-			{
-				return true;
-			}
-			if ( null == obj || !getClass().equals( obj.getClass() ) )
-			{
-				return false;
-			}
-
-			Key that = (Key) obj;
-			return artifactId.equals( that.artifactId ) && groupId.equals( that.groupId ) &&
-				version.equals( that.version ) && tag.equals( that.tag );
-		}
-
-		@Override
-		public int hashCode()
-		{
-			return hash;
-		}
-
-	}
+    }
 }

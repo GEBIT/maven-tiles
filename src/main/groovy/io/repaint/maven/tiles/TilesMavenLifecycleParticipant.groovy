@@ -55,6 +55,7 @@ import org.apache.maven.model.PluginManagement
 import org.apache.maven.model.Repository
 import org.apache.maven.model.Resource
 import org.apache.maven.model.building.DefaultModelBuilder
+import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuilder
 import org.apache.maven.model.building.ModelBuildingListener
@@ -111,9 +112,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	@Requirement
 	ArtifactResolver resolver
-
-	@Requirement
-	ModelBuilder modelBuilder
 
 	@Requirement
 	ModelProcessor modelProcessor
@@ -412,7 +410,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		this.mavenVersionIsolate = discoverMavenVersion(mavenSession)
 
-		this.modelCache = new NotDefaultModelCache(mavenSession)
+		this.modelCache = new NotDefaultModelCache(mavenSession.repositorySession)
 
 		repositoryFactory = mavenSession.container.lookup(ArtifactRepositoryFactory)
 		repositoryLayouts = mavenSession.lookupMap(ArtifactRepositoryLayout.class.getName()) as Map<String, ArtifactRepositoryLayout>
@@ -540,82 +538,79 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		locationTracking: true, twoPhaseBuilding: true, processPlugins: true)
 
 		boolean tilesInjected = false
+		
+		final ModelBuilder modelBuilder = new DefaultModelBuilderFactory().newInstance();
 		ModelProcessor delegateModelProcessor = new ModelProcessor() {
-					@Override
-					File locatePom(File projectDirectory) {
-						return modelProcessor.locatePom(projectDirectory)
-					}
+			@Override
+			File locatePom(File projectDirectory) {
+				return modelProcessor.locatePom(projectDirectory)
+			}
 
-					@Override
-					Model read(File input, Map<String, ?> options) throws IOException, ModelParseException {
-						return modelProcessor.read(input, options)
-					}
+			@Override
+			Model read(File input, Map<String, ?> options) throws IOException, ModelParseException {
+				return modelProcessor.read(input, options)
+			}
 
-					@Override
-					Model read(Reader input, Map<String, ?> options) throws IOException, ModelParseException {
-						return modelProcessor.read(input, options)
-					}
+			@Override
+			Model read(Reader input, Map<String, ?> options) throws IOException, ModelParseException {
+				return modelProcessor.read(input, options)
+			}
 
-					@Override
-					Model read(InputStream input, Map<String, ?> options) throws IOException, ModelParseException {
-						Model model = modelProcessor.read(input, options)
+			@Override
+			Model read(InputStream input, Map<String, ?> options) throws IOException, ModelParseException {
+				Model model = modelProcessor.read(input, options)
 
-						use(GavUtil) {
-							if (model.artifactId == project.artifactId
-							&& model.realGroupId == project.groupId
-							&& model.realVersion == project.originalModel.realVersion
-							&& model.packaging == project.packaging) {
-								// we're at the first (project) level. Apply tiles here if no explicit parent is set
-								if (!applyBeforeParent || modelRealGa(model) == applyBeforeParent) {
-									injectTilesIntoParentStructure(project, tiles, model, request)
-									tilesInjected = true
-								}
-							} else if (modelRealGa(model) == applyBeforeParent) {
-								// we're at the level with the explicitly selected parent. Apply the tiles here
-								injectTilesIntoParentStructure(project, tiles, model, request)
-								tilesInjected = true
-							} else if (model.packaging == 'tile' || model.packaging == 'pom') {
-								// we could be at a parent that is a tile. In this case return the precomputed model
-								TileModel oneOfUs = tiles.find { TileModel tm ->
-									Model tileModel = tm.model
-									return (model.artifactId == tileModel.artifactId && model.realGroupId == tileModel.realGroupId &&
-											model.realVersion == tileModel.realVersion)
-								}
-
-								if (oneOfUs) {
-									model = oneOfUs.model
-								}
-							}
-
-							// if we want to apply tiles at a specific parent and have not come by it yet, we need
-							// to make the parent reference project specific, so that it will not pick up a cached
-							// version. We do this by adding a project specific suffix, which will later be removed
-							// when actually loading that parent.
-							if(applyBeforeParent && !tilesInjected && model.parent) {
-								// remove the parent from the cache which causes it to be reloaded through our ModelProcessor
-								request.modelCache.put(model.parent.groupId, model.parent.artifactId, model.parent.version,
-										org.apache.maven.model.building.ModelCacheTag.RAW.getName(), null)
-							}
+				use(GavUtil) {
+					if (model.artifactId == project.artifactId
+					&& model.realGroupId == project.groupId
+					&& model.realVersion == project.originalModel.realVersion
+					&& model.packaging == project.packaging) {
+						// we're at the first (project) level. Apply tiles here if no explicit parent is set
+						if (!applyBeforeParent || modelRealGa(model) == applyBeforeParent) {
+							injectTilesIntoParentStructure(modelBuilder, project, tiles, model, request)
+							tilesInjected = true
+						}
+					} else if (modelRealGa(model) == applyBeforeParent) {
+						// we're at the level with the explicitly selected parent. Apply the tiles here
+						injectTilesIntoParentStructure(modelBuilder, project, tiles, model, request)
+						tilesInjected = true
+					} else if (model.packaging == 'tile' || model.packaging == 'pom') {
+						// we could be at a parent that is a tile. In this case return the precomputed model
+						TileModel oneOfUs = tiles.find { TileModel tm ->
+							Model tileModel = tm.model
+							return (model.artifactId == tileModel.artifactId && model.realGroupId == tileModel.realGroupId &&
+									model.realVersion == tileModel.realVersion)
 						}
 
-						return model
+						if (oneOfUs) {
+							model = oneOfUs.model
+						}
+					}
+
+					// if we want to apply tiles at a specific parent and have not come by it yet, we need
+					// to make the parent reference project specific, so that it will not pick up a cached
+					// version. We do this by adding a project specific suffix, which will later be removed
+					// when actually loading that parent.
+					if(applyBeforeParent && !tilesInjected && model.parent) {
+						// remove the parent from the cache which causes it to be reloaded through our ModelProcessor
+						request.modelCache.put(model.parent.groupId, model.parent.artifactId, model.parent.version,
+								org.apache.maven.model.building.ModelCacheTag.RAW.getName(), null)
 					}
 				}
 
-		((DefaultModelBuilder)modelBuilder).setModelProcessor(delegateModelProcessor)
-		try {
-			ModelBuildingResult interimBuild = modelBuilder.build(request)
-
-			ModelBuildingResult finalModel = modelBuilder.build(request, interimBuild)
-			if (!tilesInjected && applyBeforeParent) {
-				throw new MavenExecutionException("Cannot apply tiles for ${project.groupId}:${project.artifactId}, the expected parent ${applyBeforeParent} is not found.",
-				project.file)
+				return model
 			}
-			copyModel(project, finalModel.effectiveModel)
-		} finally {
-			// restore original ModelProcessor
-			((DefaultModelBuilder)modelBuilder).setModelProcessor(modelProcessor)
 		}
+		modelBuilder.setModelProcessor(delegateModelProcessor)
+
+		ModelBuildingResult interimBuild = modelBuilder.build(request)
+
+		ModelBuildingResult finalModel = modelBuilder.build(request, interimBuild)
+		if (!tilesInjected && applyBeforeParent) {
+			throw new MavenExecutionException("Cannot apply tiles for ${project.groupId}:${project.artifactId}, the expected parent ${applyBeforeParent} is not found.",
+			project.file)
+		}
+		copyModel(project, finalModel.effectiveModel)
 	}
 
 	ModelSource2 createModelSource(File pomFile) {
@@ -694,7 +689,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	 * @param pomFile - the pomFile is required for model data for Maven 3.2.x not for 3.0.x
 	 */
 	@CompileStatic(TypeCheckingMode.SKIP)
-	protected void putModelInCache(Model model, ModelBuildingRequest request, File pomFile) {
+	protected void putModelInCache(ModelBuilder modelBuilder, Model model, ModelBuildingRequest request, File pomFile) {
 		// stuff it in the cache so it is ready when requested rather than it trying to be resolved.
 		modelBuilder.putCache(request.modelCache, model.groupId, model.artifactId, model.version,
 				org.apache.maven.model.building.ModelCacheTag.RAW,
@@ -710,7 +705,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	 * @param pomModel - the current project
 	 * @param request - the request to build the current project
 	 */
-	public void injectTilesIntoParentStructure(MavenProject project, List<TileModel> tiles, Model pomModel,
+	public void injectTilesIntoParentStructure(ModelBuilder modelBuilder, MavenProject project, List<TileModel> tiles, Model pomModel,
 			ModelBuildingRequest request) {
 		Parent originalParent = pomModel.parent
 		Model lastPom = pomModel
@@ -735,32 +730,38 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				interpolator.addValueSource(new PropertiesBasedValueSource(project.properties))
 				originalParent.version = interpolator.interpolate(originalParent.version)
 			}
-		}
 
-		tiles.each { TileModel tileModel ->
-			Model model = tileModel.model
-
-			Parent modelParent = new Parent(groupId: model.groupId, version: model.version, artifactId: model.artifactId)
-			lastPom.parent = modelParent
-
-			if (pomModel != lastPom) {
-				putModelInCache(lastPom, request, lastPomFile)
-				logger.debug("Mixed '${modelGav(lastPom)}' with tile '${parentGav(modelParent)}' as it's new parent.")
+			tiles.each { TileModel tileModel ->
+				Model model = tileModel.model
+				
+				Parent modelParent = new Parent(groupId: model.groupId, version: model.version, 
+					artifactId: model.artifactId + "#" + getRealGroupId(project.model) + "-" + project.artifactId)
+				lastPom.parent = modelParent
+				
+				if (pomModel != lastPom) {
+					Model specificModel = lastPom.clone()
+					specificModel.artifactId += "#" + getRealGroupId(project.model) + "-" + project.artifactId
+					putModelInCache(modelBuilder, specificModel, request, lastPomFile)
+					logger.debug("Mixed '${modelGav(lastPom)}' with tile '${parentGav(modelParent)}' as it's new parent.")
+				}
+				
+				lastPom = model
+				lastPomFile = tileModel.tilePom
 			}
-
-			lastPom = model
-			lastPomFile = tileModel.tilePom
+			
+			// set a special property at the project so we can read out the list of applied tiles
+			pomModel.properties[".applied-tiles"] = tiles.collect { tile -> GavUtil.modelGav(tile.model) }.join(",")
+					
+					lastPom.parent = originalParent
+					logger.debug("Mixed '${modelGav(lastPom)}' with original parent '${parentGav(originalParent)}' as it's  new top level parent.")
+					logger.debug("")
 		}
 
-		// set a special property at the project so we can read out the list of applied tiles
-		pomModel.properties[".applied-tiles"] = tiles.collect { tile -> GavUtil.modelGav(tile.model) }.join(",")
-
-		lastPom.parent = originalParent
-		logger.debug("Mixed '${modelGav(lastPom)}' with original parent '${parentGav(originalParent)}' as it's  new top level parent.")
-		logger.debug("")
 
 		if (pomModel != lastPom) {
-			putModelInCache(lastPom, request, lastPomFile)
+			Model specificModel = lastPom.clone()
+			specificModel.artifactId += "#" + getRealGroupId(project.model) + "-" + project.artifactId
+			putModelInCache(modelBuilder, specificModel, request, lastPomFile)
 		}
 
 	}
