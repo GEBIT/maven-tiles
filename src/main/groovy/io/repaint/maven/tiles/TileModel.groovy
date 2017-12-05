@@ -53,6 +53,13 @@ class TileModel {
 	}
 
 	public TileModel() {}
+
+	public TileModel(File tilePom, Model model, List<String> tiles) {
+		this.tilePom = tilePom
+		this.model = model
+		this.tiles = tiles
+	}
+		
 	public TileModel(File tilePom, Artifact artifact) {
 		loadTile(tilePom)
 

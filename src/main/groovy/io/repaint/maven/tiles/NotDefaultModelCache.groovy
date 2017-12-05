@@ -1,22 +1,13 @@
 package io.repaint.maven.tiles
 
-import java.lang.reflect.Field
-import java.util.HashMap
-import java.util.Map
-import java.util.WeakHashMap
-
-import org.apache.maven.execution.MavenSession
-import org.apache.maven.model.building.ModelCache
-import org.eclipse.aether.RepositorySystemSession
-
-import groovy.transform.CompileStatic
-
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 
-import org.apache.maven.model.building.ModelCache;
+import org.apache.maven.model.building.ModelCache
 import org.eclipse.aether.RepositoryCache;
-import org.eclipse.aether.RepositorySystemSession;
+import org.eclipse.aether.RepositorySystemSession
+
+import groovy.transform.CompileStatic
 
 /**
  * Implementation of {@link ModelCache} which shares keys with org.apache.maven.repository.internal.DefaultModelCache
@@ -59,9 +50,20 @@ public class NotDefaultModelCache
         return cache.get( session, key );
     }
 
+    public Object getOriginal( String groupId, String artifactId, String version, String tag )
+    {
+        Object key = createKey( groupId, artifactId, version, tag )
+        return cache.get( session, key );
+    }
+
     public void put( String groupId, String artifactId, String version, String tag, Object data )
     {
         localModels.putAt(createKey( groupId, artifactId, version, tag ), data);
+    }
+
+    public void putOriginal( String groupId, String artifactId, String version, String tag, Object data )
+    {
+        cache.put( session, createKey( groupId, artifactId, version, tag ), data);
     }
 
     static Object createKey( String groupId, String artifactId, String version, String tag ) {

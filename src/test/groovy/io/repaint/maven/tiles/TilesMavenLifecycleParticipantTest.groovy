@@ -18,8 +18,6 @@ package io.repaint.maven.tiles
 
 import static groovy.test.GroovyAssert.shouldFail
 import static org.mockito.Mockito.mock
-import groovy.transform.CompileStatic
-import io.repaint.maven.tiles.isolators.MavenVersionIsolator
 
 import org.apache.maven.MavenExecutionException
 import org.apache.maven.artifact.Artifact
@@ -41,13 +39,18 @@ import org.apache.maven.model.io.xpp3.MavenXpp3Reader
 import org.apache.maven.project.MavenProject
 import org.codehaus.plexus.logging.Logger
 import org.codehaus.plexus.util.xml.Xpp3DomBuilder
+import org.eclipse.aether.DefaultRepositoryCache
 import org.eclipse.aether.DefaultRepositorySystemSession
+import org.eclipse.aether.RepositorySystemSession
 import org.junit.AfterClass
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.runners.MockitoJUnitRunner
+
+import groovy.transform.CompileStatic
+import io.repaint.maven.tiles.isolators.MavenVersionIsolator
 
 /**
  * If testMergeTile fails with java.io.FileNotFoundException: src/test/resources/licenses-tiles-pom.xml
@@ -379,9 +382,12 @@ public class TilesMavenLifecycleParticipantTest {
 	}
 
 	protected MavenSession fakeSessionForProject(MavenProject project) {
-		MavenSession session = new MavenSession(null, new DefaultRepositorySystemSession(),
+		DefaultRepositorySystemSession repoSystemSession = new DefaultRepositorySystemSession()
+		repoSystemSession.cache = new DefaultRepositoryCache()
+		MavenSession session = new MavenSession(null, repoSystemSession,
 				new DefaultMavenExecutionRequest(), null)
 		session.setProjects([project])
+		session.repositorySession.getData().set("$TileData", new TileData())
 		return session;
 	}
 
