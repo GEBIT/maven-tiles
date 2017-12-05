@@ -65,6 +65,7 @@ import org.apache.maven.model.building.ModelCache
 import org.apache.maven.model.building.ModelProcessor
 import org.apache.maven.model.building.ModelSource2
 import org.apache.maven.model.io.ModelParseException
+import org.apache.maven.model.plugin.LifecycleBindingsInjector
 import org.apache.maven.model.resolution.InvalidRepositoryException
 import org.apache.maven.model.resolution.ModelResolver
 import org.apache.maven.model.resolution.UnresolvableModelException
@@ -127,6 +128,9 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	@Requirement
 	ProjectBuilder projectBuilder
+
+	@Requirement
+	LifecycleBindingsInjector lifecycleBindingsInjector
 
 	/**
 	 * Component used to create a repository.
@@ -410,8 +414,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		this.mavenVersionIsolate = discoverMavenVersion(mavenSession)
 
-		this.modelCache = new NotDefaultModelCache(mavenSession.repositorySession)
-
 		repositoryFactory = mavenSession.container.lookup(ArtifactRepositoryFactory)
 		repositoryLayouts = mavenSession.lookupMap(ArtifactRepositoryLayout.class.getName()) as Map<String, ArtifactRepositoryLayout>
 
@@ -481,6 +483,8 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	 */
 	protected void orchestrateMerge(MavenSession mavenSession, MavenProject project) throws MavenExecutionException {
 		// Clear collected tiles from previous project in reactor
+		this.modelCache = new NotDefaultModelCache(mavenSession.repositorySession)
+		
 		TileData tileData = new TileData()
 		mavenSession.repositorySession.getData().set("$TileData", tileData)
 
@@ -539,7 +543,8 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		boolean tilesInjected = false
 		
-		final ModelBuilder modelBuilder = new DefaultModelBuilderFactory().newInstance();
+		final DefaultModelBuilder modelBuilder = new DefaultModelBuilderFactory().newInstance();
+		modelBuilder.setLifecycleBindingsInjector(lifecycleBindingsInjector)
 		ModelProcessor delegateModelProcessor = new ModelProcessor() {
 			@Override
 			File locatePom(File projectDirectory) {
@@ -589,8 +594,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 					// if we want to apply tiles at a specific parent and have not come by it yet, we need
 					// to make the parent reference project specific, so that it will not pick up a cached
-					// version. We do this by adding a project specific suffix, which will later be removed
-					// when actually loading that parent.
+					// version. We do this by clearing out any existing model from the cache.
 					if(applyBeforeParent && !tilesInjected && model.parent) {
 						// remove the parent from the cache which causes it to be reloaded through our ModelProcessor
 						request.modelCache.put(model.parent.groupId, model.parent.artifactId, model.parent.version,
@@ -735,13 +739,11 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				Model model = tileModel.model
 				
 				Parent modelParent = new Parent(groupId: model.groupId, version: model.version, 
-					artifactId: model.artifactId + "#" + getRealGroupId(project.model) + "-" + project.artifactId)
+					artifactId: model.artifactId)
 				lastPom.parent = modelParent
 				
 				if (pomModel != lastPom) {
-					Model specificModel = lastPom.clone()
-					specificModel.artifactId += "#" + getRealGroupId(project.model) + "-" + project.artifactId
-					putModelInCache(modelBuilder, specificModel, request, lastPomFile)
+					putModelInCache(modelBuilder, lastPom, request, lastPomFile)
 					logger.debug("Mixed '${modelGav(lastPom)}' with tile '${parentGav(modelParent)}' as it's new parent.")
 				}
 				
@@ -759,9 +761,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 
 		if (pomModel != lastPom) {
-			Model specificModel = lastPom.clone()
-			specificModel.artifactId += "#" + getRealGroupId(project.model) + "-" + project.artifactId
-			putModelInCache(modelBuilder, specificModel, request, lastPomFile)
+			putModelInCache(modelBuilder, lastPom, request, lastPomFile)
 		}
 
 	}

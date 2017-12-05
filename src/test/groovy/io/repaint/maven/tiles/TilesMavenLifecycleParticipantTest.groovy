@@ -33,6 +33,7 @@ import org.apache.maven.model.Build
 import org.apache.maven.model.Model
 import org.apache.maven.model.Parent
 import org.apache.maven.model.Plugin
+import org.apache.maven.model.building.ModelBuilder
 import org.apache.maven.model.building.ModelBuildingRequest
 import org.apache.maven.model.building.ModelData
 import org.apache.maven.model.building.ModelProblemCollector
@@ -282,13 +283,13 @@ public class TilesMavenLifecycleParticipantTest {
 
 		participant = new TilesMavenLifecycleParticipant() {
 					@Override
-					protected void putModelInCache(Model model, ModelBuildingRequest request, File pFile) {
+					protected void putModelInCache(ModelBuilder modelBuilder, Model model, ModelBuildingRequest request, File pFile) {
 					}
 				}
 
 		stuffParticipant()
 
-		participant.injectTilesIntoParentStructure(
+		participant.injectTilesIntoParentStructure(null,
 				[getGroupId: { pomModel.groupId }, getArtifactId: { pomModel.artifactId }, getProperties: { new Properties() } ] as MavenProject,
 				tiles, pomModel, [getPomFile: { return pomFile } ] as ModelBuildingRequest)
 
@@ -299,7 +300,7 @@ public class TilesMavenLifecycleParticipantTest {
 
 		pomModel.parent = new Parent(groupId: 'io.repaint.tiles', artifactId: 'fake-parent', version: '1')
 
-		participant.injectTilesIntoParentStructure(
+		participant.injectTilesIntoParentStructure(null,
 				[getGroupId: { pomModel.groupId }, getArtifactId: { pomModel.artifactId }, getProperties: { new Properties() } ] as MavenProject,
 				tiles, pomModel, [getPomFile: { return pomFile } ] as ModelBuildingRequest)
 		assert antrunTile.model.parent.artifactId == 'fake-parent'

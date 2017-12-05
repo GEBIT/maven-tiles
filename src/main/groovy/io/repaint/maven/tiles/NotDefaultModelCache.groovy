@@ -1,6 +1,7 @@
 package io.repaint.maven.tiles
 
 import java.lang.reflect.Field
+import java.util.HashMap
 import java.util.Map
 import java.util.WeakHashMap
 
@@ -41,7 +42,8 @@ public class NotDefaultModelCache
     private final RepositorySystemSession session;
 
     private final RepositoryCache cache;
-
+    private final Map<Object, Object> localModels = new HashMap<>( 256 );
+	
     public NotDefaultModelCache( RepositorySystemSession session )
     {
         this.session = session;
@@ -50,12 +52,16 @@ public class NotDefaultModelCache
 
     public Object get( String groupId, String artifactId, String version, String tag )
     {
-        return cache.get( session, createKey( groupId, artifactId, version, tag ) );
+        Object key = createKey( groupId, artifactId, version, tag )
+        if ( localModels.containsKey(key) ) {
+            return localModels.get( key )
+        }
+        return cache.get( session, key );
     }
 
     public void put( String groupId, String artifactId, String version, String tag, Object data )
     {
-        cache.put( session, createKey( groupId, artifactId, version, tag ), data );
+        localModels.putAt(createKey( groupId, artifactId, version, tag ), data);
     }
 
     static Object createKey( String groupId, String artifactId, String version, String tag ) {
