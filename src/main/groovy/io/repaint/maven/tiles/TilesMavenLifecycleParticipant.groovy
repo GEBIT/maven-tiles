@@ -32,6 +32,7 @@ import groovy.transform.TypeCheckingMode
 import io.repaint.maven.tiles.TilesMavenLifecycleParticipant.CachingModelSource
 import io.repaint.maven.tiles.isolators.AetherIsolator
 import io.repaint.maven.tiles.isolators.Maven30Isolator
+import io.repaint.maven.tiles.isolators.Maven35Isolator
 import io.repaint.maven.tiles.isolators.MavenVersionIsolator
 
 import org.apache.maven.AbstractMavenLifecycleParticipant
@@ -70,6 +71,7 @@ import org.apache.maven.model.plugin.LifecycleBindingsInjector
 import org.apache.maven.model.resolution.InvalidRepositoryException
 import org.apache.maven.model.resolution.ModelResolver
 import org.apache.maven.model.resolution.UnresolvableModelException
+import org.apache.maven.project.DefaultProjectBuilder
 import org.apache.maven.project.DefaultProjectBuildingRequest
 import org.apache.maven.project.MavenProject
 import org.apache.maven.project.ProjectBuilder
@@ -398,9 +400,13 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		MavenVersionIsolator isolator
 
 		try {
-			isolator = new AetherIsolator(mavenSession)
+			isolator = new Maven35Isolator(mavenSession)
 		} catch (MavenExecutionException mee) {
-			isolator = new Maven30Isolator(mavenSession)
+			try {
+				isolator = new AetherIsolator(mavenSession)
+			} catch (MavenExecutionException mee2) {
+				isolator = new Maven30Isolator(mavenSession)
+			}
 		}
 
 		return isolator
@@ -798,10 +804,21 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	}
 
+	@CompileStatic(TypeCheckingMode.SKIP)
 	protected void copyModel(MavenProject project, Model newModel) {
 
 		// no setting parent, we have generated an effective model which is now all copied in
 		Model projectModel = project.model
+
+		// is there a change in dependencies ?
+		boolean reresolveProjectArtifacts = false
+		if (!project.resolvedArtifacts?.isEmpty() && projectModel.dependencies != newModel.dependencies) {
+			// resolved artifacts are invalid at this point
+			project.resolvedArtifacts = null
+			mavenVersionIsolate.flushProjectArtifacts(project)
+			reresolveProjectArtifacts = true
+		}
+
 		projectModel.build = newModel.build
 		projectModel.reporting = newModel.reporting
 		projectModel.dependencyManagement = newModel.dependencyManagement
@@ -843,6 +860,15 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				build.pluginManagement = new PluginManagement()
 			}
 			build.pluginManagement.addPlugin(m2ePlugin)
+		}
+
+		if (reresolveProjectArtifacts) {
+			// re-resolving project artifacts needs to be done by invoking a private method
+			DefaultProjectBuilder defaultProjectBuilder = (DefaultProjectBuilder) projectBuilder
+			def resolveDependenciesMethod = DefaultProjectBuilder.class.getDeclaredMethod("resolveDependencies", 
+				(Class[]) [MavenProject.class, RepositorySystemSession.class])
+			resolveDependenciesMethod.accessible = true
+			resolveDependenciesMethod.invoke(projectBuilder, project, mavenSession.getRepositorySession())
 		}
 	}
 

@@ -6,6 +6,7 @@ import org.apache.maven.artifact.Artifact
 import org.apache.maven.artifact.repository.ArtifactRepository
 import org.apache.maven.execution.MavenSession
 import org.apache.maven.model.building.ModelBuildingRequest
+import org.apache.maven.project.MavenProject
 
 /**
  *
@@ -49,5 +50,9 @@ abstract class BaseMavenIsolator implements MavenVersionIsolator {
 		if (versionRangeResult.versions) {
 			tileArtifact.version = versionRangeResult.highestVersion
 		}
+	}
+
+	public void flushProjectArtifacts(MavenProject project) {
+		// no-op
 	}
 }

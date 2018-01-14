@@ -53,5 +53,4 @@ class AetherIsolator extends BaseMavenIsolator {
 
 		versionRangeResolver = mavenSession.container.lookup(versionRangeResolverClass)
 	}
-
 }

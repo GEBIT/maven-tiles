@@ -123,6 +123,10 @@ public class TilesMavenLifecycleParticipantTest {
 					ModelData createModelData(Model model, File pomFile) {
 						return null
 					}
+
+					@Override
+					void flushProjectArtifacts(MavenProject project) {
+					}
 				}
 	}
 
