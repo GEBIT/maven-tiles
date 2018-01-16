@@ -590,6 +590,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 					if (source) {
 						model = source.getModel(modelProcessor, options)
 					}
+					input.close()
 				} else {
 					model = modelProcessor.read(input, options)
 				}
