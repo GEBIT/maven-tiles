@@ -133,7 +133,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	@Requirement
 	ProjectBuilder projectBuilder
-	
+
 	@Requirement
 	LifecycleBindingsInjector lifecycleBindingsInjector
 
@@ -265,8 +265,8 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				// to enable filtering we need to create a project first
 				RepositoryCache cache = mavenSession.getRepositorySession().getCache()
 				File tileEffective = (File) cache.get(mavenSession.getRepositorySession(), "tile:" + tileArtifact.file)
-				if (!tileEffective 
-						|| !tileEffective.exists() 
+				if (!tileEffective
+						|| !tileEffective.exists()
 						|| tileEffective.lastModified() < tileArtifact.file.lastModified()) {
 					ProjectBuildingRequest prjRequest = new DefaultProjectBuildingRequest(mavenSession.projectBuildingRequest)
 					prjRequest.project = null
@@ -348,10 +348,23 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		return tokens.toArray(new String[tokens.size()])
 	}
 
-	protected Artifact turnPropertyIntoUnprocessedTile(String artifactGav, File pomFile)
+	protected Artifact turnPropertyIntoUnprocessedTile(String artifactGav, MavenProject project, File pomFile)
 	throws MavenExecutionException {
 
 		String[] gav = tokenizeWithProperties(artifactGav)
+		if (gav.size() == 2 || gav.size() == 4) {
+			if (project?.managedVersionMap) {
+				String key = gav[0] + ":" + gav[1] + ":xml"
+				Artifact managedArtifact = project.managedVersionMap.get(key);
+				if (managedArtifact) {
+					return managedArtifact;
+				} else {
+					throw new MavenExecutionException("${artifactGav} is not a managedDependency for $key", pomFile)
+				}
+			} else {
+				logger.debug("${artifactGav} has no project context")
+			}
+		}
 
 		if (gav.size() != 3 && gav.size() != 5) {
 			throw new MavenExecutionException("${artifactGav} does not have the form group:artifact:version-range or group:artifact:extension:classifier:version-range", pomFile)
@@ -459,12 +472,12 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 						if (applyBeforeParent) {
 							parentsAppliedWithTiles.add(applyBeforeParent)
 						}
-						
+
 						// did we expect but not get a distribution artifact repository?
 						if (!currentProject.distributionManagementArtifactRepository) {
 							discoverAndSetDistributionManagementArtifactoryRepositoriesIfTheyExist(currentProject)
 						}
-				
+
 					} finally {
 						// restore previous tile data
 						mavenSession.repositorySession.getData().set("$TileData", oldTileData)
@@ -507,9 +520,9 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	protected void orchestrateMerge(MavenSession mavenSession, MavenProject project) throws MavenExecutionException {
 		// Clear collected tiles from previous project in reactor
 		this.modelCache = new NotDefaultModelCache(mavenSession.repositorySession)
-		
+
 		// collect the first set of tiles
-		parseConfiguration(mavenSession, project.model, project.getFile(), true)
+		parseConfiguration(mavenSession, project, project.model, project.getFile(), true)
 
 		// collect any unprocessed tiles, and process them causing them to potentially load more unprocessed ones
 		loadAllDiscoveredTiles(mavenSession, project)
@@ -562,7 +575,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		locationTracking: true, twoPhaseBuilding: true, processPlugins: true)
 
 		boolean tilesInjected = false
-		
+
 		final DefaultModelBuilder modelBuilder = new DefaultModelBuilderFactory().newInstance()
 		modelBuilder.setLifecycleBindingsInjector(lifecycleBindingsInjector)
 		ModelProcessor delegateModelProcessor = new ModelProcessor() {
@@ -700,7 +713,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	@CompileStatic(TypeCheckingMode.SKIP)
 	protected void putOriginalModelInCache(String groupId, String artifactId, String version, Model model, File file) {
-		modelCache.putOriginal(groupId, artifactId, version, org.apache.maven.model.building.ModelCacheTag.RAW.name, 
+		modelCache.putOriginal(groupId, artifactId, version, org.apache.maven.model.building.ModelCacheTag.RAW.name,
 				mavenVersionIsolate.createModelData(model, file))
 	}
 
@@ -735,7 +748,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			def (pom, model, tiles) = entry
 			if (model) {
 				return new TileModel(pom, model, tiles)
-			} 
+			}
 		}
 		return null
 	}
@@ -776,23 +789,23 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 			tiles.each { TileModel tileModel ->
 				Model model = tileModel.model
-				
-				Parent modelParent = new Parent(groupId: model.groupId, version: model.version, 
+
+				Parent modelParent = new Parent(groupId: model.groupId, version: model.version,
 					artifactId: model.artifactId)
 				lastPom.parent = modelParent
-				
+
 				if (pomModel != lastPom) {
 					putModelInCache(modelBuilder, lastPom, request, lastPomFile)
 					logger.debug("Mixed '${modelGav(lastPom)}' with tile '${parentGav(modelParent)}' as it's new parent.")
 				}
-				
+
 				lastPom = model
 				lastPomFile = tileModel.tilePom
 			}
-			
+
 			// set a special property at the project so we can read out the list of applied tiles
 			pomModel.properties[".applied-tiles"] = tiles.collect { tile -> GavUtil.modelGav(tile.model) }.join(",")
-					
+
 					lastPom.parent = originalParent
 					logger.debug("Mixed '${modelGav(lastPom)}' with original parent '${parentGav(originalParent)}' as it's  new top level parent.")
 					logger.debug("")
@@ -866,7 +879,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		if (reresolveProjectArtifacts) {
 			// re-resolving project artifacts needs to be done by invoking a private method
 			DefaultProjectBuilder defaultProjectBuilder = (DefaultProjectBuilder) projectBuilder
-			def resolveDependenciesMethod = DefaultProjectBuilder.class.getDeclaredMethod("resolveDependencies", 
+			def resolveDependenciesMethod = DefaultProjectBuilder.class.getDeclaredMethod("resolveDependencies",
 				(Class[]) [MavenProject.class, RepositorySystemSession.class])
 			resolveDependenciesMethod.accessible = true
 			resolveDependenciesMethod.invoke(projectBuilder, project, mavenSession.getRepositorySession())
@@ -885,7 +898,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			// ensure we have resolved the tile (it could come from a non-tile model)
 			if (tileModel) {
 				tileData.processedTiles.put(artifactName(resolvedTile), new ArtifactModel(resolvedTile, tileModel))
-				parseForExtendedSyntax(mavenSession, tileModel, resolvedTile.getFile())
+				parseForExtendedSyntax(mavenSession, project, tileModel, resolvedTile.getFile())
 			}
 		}
 
@@ -911,7 +924,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	 * Normally used inside the current project's pom file when declaring the tile plugin. People may prefer this
 	 * to use to include tiles however in a tile.xml
 	 */
-	protected void parseConfiguration(MavenSession mavenSession, Model model, File pomFile, boolean projectModel) {
+	protected void parseConfiguration(MavenSession mavenSession, MavenProject project, Model model, File pomFile, boolean projectModel) {
 		Xpp3Dom configuration = model?.build?.plugins?.
 				find({ Plugin plugin ->
 					return plugin.groupId == TILEPLUGIN_GROUP &&
@@ -920,7 +933,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		Properties dependencyProperties = new Properties()
 		if (configuration) {
 			configuration.getChild("tiles")?.children?.each { Xpp3Dom tile ->
-				processConfigurationTile(mavenSession, model, tile.value, pomFile)
+				processConfigurationTile(mavenSession, project, model, tile.value, pomFile)
 			}
 			applyBeforeParent = configuration.getChild("applyBefore")?.value
 
@@ -932,16 +945,16 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	/**
 	 * Used for when we have a TileModel (we have read directly) so we support the extra syntax.
 	 */
-	protected void parseForExtendedSyntax(MavenSession mavenSession, TileModel model, File pomFile) {
+	protected void parseForExtendedSyntax(MavenSession mavenSession, MavenProject project, TileModel model, File pomFile) {
 		model.tiles.each { String tileGav ->
-			processConfigurationTile(mavenSession, model.model, tileGav, pomFile)
+			processConfigurationTile(mavenSession, project, model.model, tileGav, pomFile)
 		}
 
-		parseConfiguration(mavenSession, model.model, pomFile, false)
+		parseConfiguration(mavenSession, project, model.model, pomFile, false)
 	}
 
-	protected void processConfigurationTile(MavenSession mavenSession, Model model, String tileDependencyName, File pomFile) {
-		Artifact unprocessedTile = turnPropertyIntoUnprocessedTile(tileDependencyName, pomFile)
+	protected void processConfigurationTile(MavenSession mavenSession, MavenProject project, Model model, String tileDependencyName, File pomFile) {
+		Artifact unprocessedTile = turnPropertyIntoUnprocessedTile(tileDependencyName, project, pomFile)
 		TileData tileData = getTileData(mavenSession)
 		String depName = artifactName(unprocessedTile)
 
@@ -997,7 +1010,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		URI getLocationURI() {
 			return pomFile.toURI()
 		}
-		
+
 		Model getModel(ModelProcessor modelProcessor, Map<String, ?> options) {
 			if (!model) {
 				if (pomArtifact) {

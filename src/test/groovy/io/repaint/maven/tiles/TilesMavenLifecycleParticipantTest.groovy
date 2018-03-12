@@ -185,7 +185,7 @@ public class TilesMavenLifecycleParticipantTest {
 
 	@Test
 	public void testGavFromString() {
-		Artifact dummy = participant.turnPropertyIntoUnprocessedTile("my:long:feet", null)
+		Artifact dummy = participant.turnPropertyIntoUnprocessedTile("my:long:feet", null, null)
 
 		assert dummy.version == 'feet'
 		assert dummy.artifactId == 'long'
@@ -193,7 +193,7 @@ public class TilesMavenLifecycleParticipantTest {
 		assert dummy.classifier == ''
 		assert dummy.type == 'xml'
 
-		Artifact dummy2 = participant.turnPropertyIntoUnprocessedTile("my:long:sore:smelly:feet", null)
+		Artifact dummy2 = participant.turnPropertyIntoUnprocessedTile("my:long:sore:smelly:feet", null, null)
 
 		assert dummy2.version == 'feet'
 		assert dummy2.artifactId == 'long'
@@ -203,18 +203,18 @@ public class TilesMavenLifecycleParticipantTest {
 
 		// too short
 		shouldFail(MavenExecutionException) {
-			participant.turnPropertyIntoUnprocessedTile("my:long", null)
+			participant.turnPropertyIntoUnprocessedTile("my:long", null, null)
 		}
 
 		// too long
 		shouldFail(MavenExecutionException) {
-			participant.turnPropertyIntoUnprocessedTile("my:long:feet:and:smelly:shoes", null)
+			participant.turnPropertyIntoUnprocessedTile("my:long:feet:and:smelly:shoes", null, null)
 		}
 	}
 
 	@Test
 	public void canLoadExtendedTiles() {
-		Artifact artifact = participant.turnPropertyIntoUnprocessedTile("io.repaint.tiles:extended-syntax:1.1", null)
+		Artifact artifact = participant.turnPropertyIntoUnprocessedTile("io.repaint.tiles:extended-syntax:1.1", null, null)
 		artifact.file = new File("src/test/resources/extended-syntax-tile.xml")
 		assert participant.loadModel(artifact)
 		artifact.file = new File("src/test/resources/session-license-tile.xml")
@@ -271,13 +271,13 @@ public class TilesMavenLifecycleParticipantTest {
 	@Test
 	public void injectModelLayerTiles() {
 		TileModel sessionLicenseTile = new TileModel(new File('src/test/resources/session-license-tile.xml'),
-				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:session-license:1', null))
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:session-license:1', null, null))
 
 		TileModel extendedSyntaxTile = new TileModel(new File('src/test/resources/extended-syntax-tile.xml'),
-				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:extended-syntax:1', null))
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:extended-syntax:1', null, null))
 
 		TileModel antrunTile = new TileModel(new File('src/test/resources/antrun1-tile.xml'),
-				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:antrun1:1', null))
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:antrun1:1', null, null))
 
 		List<TileModel> tiles = [
 			sessionLicenseTile,
