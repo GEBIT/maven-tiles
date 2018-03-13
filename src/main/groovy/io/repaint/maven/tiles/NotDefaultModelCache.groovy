@@ -23,7 +23,7 @@ public class NotDefaultModelCache
     static {
         try {
             DefaultModelCacheKey_class = Class.forName('org.apache.maven.repository.internal.DefaultModelCache$Key');
-            DefaultModelCacheKey_new = DefaultModelCacheKey_class.getConstructor(String.class, String.class, String.class, String.class);
+            DefaultModelCacheKey_new = DefaultModelCacheKey_class.getDeclaredConstructor(String.class, String.class, String.class, String.class);
 			DefaultModelCacheKey_new.accessible = true;
         } catch (ClassNotFoundException | NoSuchMethodException | SecurityException exc) {
             throw new RuntimeException("Failed to access DefaultModelCache.Key", exc);
@@ -34,7 +34,7 @@ public class NotDefaultModelCache
 
     private final RepositoryCache cache;
     private final Map<Object, Object> localModels = new HashMap<>( 256 );
-	
+
     public NotDefaultModelCache( RepositorySystemSession session )
     {
         this.session = session;
