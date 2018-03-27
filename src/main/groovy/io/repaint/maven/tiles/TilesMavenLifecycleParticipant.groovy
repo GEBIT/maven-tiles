@@ -799,6 +799,10 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			return new CachingModelSource(artifact)
 		}
 
+		ModelSource2 resolveModel(Dependency dependency) throws UnresolvableModelException {
+			return resolveModel(dependency.groupId, dependency.artifactId, dependency.version)
+		}
+
 		@Override
 		ModelSource2 resolveModel(Parent parent) throws UnresolvableModelException {
 			return resolveModel(parent.groupId, parent.artifactId, parent.version)
