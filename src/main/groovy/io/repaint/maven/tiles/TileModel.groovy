@@ -4,6 +4,7 @@ import groovy.transform.TypeCheckingMode
 import groovy.xml.XmlUtil
 import org.apache.maven.artifact.Artifact
 import org.apache.maven.model.Model
+import org.apache.maven.model.Reporting
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader
 import org.codehaus.plexus.util.xml.Xpp3Dom
 /**
@@ -15,79 +16,109 @@ import org.codehaus.plexus.util.xml.Xpp3Dom
  */
 @CompileStatic
 class TileModel {
-	Model model
-	List<String> tiles = []
-	File tilePom
+  Model model
+  List<String> tiles = []
+  File tilePom
+  List<String> fragmentNames = []
+  Model fragmentModel
 
-	/**
-	 * Load in the tile, grab the tiles from it if any, delete them
-	 * and return a new StringReader representing the pom.
-	 * @return
-	 */
-	@CompileStatic(TypeCheckingMode.SKIP)
-	Reader strippedPom() {
-		return tilePom.withReader { Reader reader ->
-			def slurper = new XmlSlurper(false, false).parse(reader)
+  /**
+   * Load in the tile, grab the tiles from it if any, delete them
+   * and return a new StringReader representing the pom.
+   * @param mergeFlag true to include top level elements with "merge:" prefix only, false otherwise
+   * @return
+   */
+  @CompileStatic(TypeCheckingMode.SKIP)
+  Reader strippedPom(boolean mergeFlag) {
+    return tilePom.withReader { Reader reader ->
+      def slurper = new XmlSlurper(false, false).parse(reader)
 
-			if (slurper.tiles) {
-				slurper.tiles.tile.each { tile ->
-					tiles.add(tile.text())
-				}
+      if (slurper.tiles) {
+        if (!mergeFlag) {
+          slurper.tiles.tile.each { tile ->
+            tiles.add(tile.text())
+          }
+        }
 
-				slurper.tiles.replaceNode {}
-			}
+        slurper.tiles.replaceNode {}
+      }
 
-			StringWriter writer = new StringWriter()
-			XmlUtil.serialize(slurper, writer)
+      boolean hasChildren = false
+      slurper.children().each {
+        if (mergeFlag != it.name().startsWith('merge:')) {
+          // remove node
+          it.replaceNode {}
+        } else if (mergeFlag && it.name().startsWith('merge:')) {
+          // keep and rename
+          fragmentNames << it.name()
+          it.replaceNode { "${it.name().substring('merge:'.length())}"(it.children()) }
+          hasChildren = true
+        } else {
+          hasChildren = true
+        }
+      }
+      if (mergeFlag && !hasChildren) {
+        return null
+      }
 
-			return new StringReader(writer.toString())
-		}
-	}
+      StringWriter writer = new StringWriter()
+      XmlUtil.serialize(slurper, writer)
 
-	public void loadTile(File tilePom) {
-		this.tilePom = tilePom
+      return new StringReader(writer.toString())
+    }
+  }
 
-		MavenXpp3Reader pomReader = new MavenXpp3Reader()
+  @CompileStatic(TypeCheckingMode.SKIP)
+  public void loadTile(File tilePom) {
+    this.tilePom = tilePom
 
-		model = pomReader.read(strippedPom())
-	}
+    MavenXpp3Reader pomReader = new MavenXpp3Reader()
 
-	public TileModel() {}
+    model = pomReader.read(strippedPom(false))
+	Reader tileMergeReader = strippedPom(true)
+	if (tileMergeReader) {
+      fragmentModel = pomReader.read(tileMergeReader)
+    }
+  }
 
-	public TileModel(File tilePom, Model model, List<String> tiles) {
-		this.tilePom = tilePom
-		this.model = model
-		this.tiles = tiles
-	}
-		
-	public TileModel(File tilePom, Artifact artifact) {
-		loadTile(tilePom)
+  public TileModel() {}
 
-		// this is in the artifact but isn't actually in the file, we need it
-		// so we can pass it through the parent structure in the TilesModelResolverImpl
+  public TileModel(File tilePom, Model model, List<String> tiles, List<String> fragmentNames, Model fragmentModel) {
+    this.tilePom = tilePom
+    this.model = model
+    this.tiles = tiles
+    this.fragmentNames = fragmentNames
+    this.fragmentModel = fragmentModel
+  }
 
-		model.version = artifact.version
-		model.groupId = artifact.groupId
-		model.artifactId = artifact.artifactId
-		model.packaging = "pom"
+  public TileModel(File tilePom, Artifact artifact) {
+    loadTile(tilePom)
 
-		// Update each tile'd plugin's execution id with the tile GAV for easier debugging/tracing
-		if (model.build) {
-			if (model.build.plugins) {
-				model.build.plugins.each { plugin ->
-					if (plugin.executions) {
-						plugin.executions.each { execution ->
-							Xpp3Dom configuration = execution.configuration as Xpp3Dom
-							if (configuration?.getAttribute("tiles-keep-id") == "true") {
-								// do not rewrite the current execution id
-								return
-							}
-							execution.id = GavUtil.artifactGav(artifact) + "::" + execution.id
-						}
-					}
-				}
-			}
-		}
+    // this is in the artifact but isn't actually in the file, we need it
+    // so we can pass it through the parent structure in the TilesModelResolverImpl
 
-	}
+    model.version = artifact.version
+    model.groupId = artifact.groupId
+    model.artifactId = artifact.artifactId
+    model.packaging = "pom"
+
+    // Update each tile'd plugin's execution id with the tile GAV for easier debugging/tracing
+    if (model.build) {
+      if (model.build.plugins) {
+        model.build.plugins.each { plugin ->
+          if (plugin.executions) {
+            plugin.executions.each { execution ->
+              Xpp3Dom configuration = execution.configuration as Xpp3Dom
+              if (configuration?.getAttribute("tiles-keep-id") == "true") {
+                // do not rewrite the current execution id
+                return
+              }
+              execution.id = GavUtil.artifactGav(artifact) + "::" + execution.id
+            }
+          }
+        }
+      }
+    }
+
+  }
 }

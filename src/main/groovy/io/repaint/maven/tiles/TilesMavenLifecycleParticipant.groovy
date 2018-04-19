@@ -25,6 +25,7 @@ import static io.repaint.maven.tiles.GavUtil.modelGav
 import static io.repaint.maven.tiles.GavUtil.modelRealGa
 import static io.repaint.maven.tiles.GavUtil.parentGav
 
+import java.util.Map
 import java.util.Map.Entry
 
 import groovy.transform.CompileStatic
@@ -51,9 +52,11 @@ import org.apache.maven.execution.MavenSession
 import org.apache.maven.model.Build
 import org.apache.maven.model.DistributionManagement
 import org.apache.maven.model.Model
+import org.apache.maven.model.ModelBase
 import org.apache.maven.model.Parent
 import org.apache.maven.model.Plugin
 import org.apache.maven.model.PluginManagement
+import org.apache.maven.model.ReportPlugin
 import org.apache.maven.model.Repository
 import org.apache.maven.model.Resource
 import org.apache.maven.model.building.DefaultModelBuilder
@@ -733,7 +736,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	protected void putTileModelInCache(TileModel model) {
 		if (modelCache) {
-			modelCache.putOriginal(model.model.groupId, model.model.artifactId, model.model.version, "tile", [model.tilePom, model.model, model.tiles])
+			modelCache.putOriginal(model.model.groupId, model.model.artifactId, model.model.version, "tile", [model.tilePom, model.model, model.tiles, model.fragmentNames, model.fragmentModel])
 		}
 	}
 
@@ -745,9 +748,9 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		// stuff the original model in the original cache
 		def entry = modelCache.getOriginal(groupId, artifactId, version, "tile")
 		if (entry)  {
-			def (pom, model, tiles) = entry
+			def (pom, model, tiles, fragmentNames, fragmentModel) = entry
 			if (model) {
-				return new TileModel(pom, model, tiles)
+				return new TileModel(pom, model, tiles, fragmentNames, fragmentModel)
 			}
 		}
 		return null
@@ -761,6 +764,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	 * @param pomModel - the current project
 	 * @param request - the request to build the current project
 	 */
+	@CompileStatic(TypeCheckingMode.SKIP)
 	public void injectTilesIntoParentStructure(ModelBuilder modelBuilder, MavenProject project, List<TileModel> tiles, Model pomModel,
 			ModelBuildingRequest request) {
 		Parent originalParent = pomModel.parent
@@ -802,13 +806,38 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				lastPom = model
 				lastPomFile = tileModel.tilePom
 			}
+			tiles.reverseEach { TileModel tileModel ->
+				// apply merged fragments
+				if (tileModel.fragmentModel) {
+					def merger = new org.apache.maven.model.inheritance.DefaultInheritanceAssembler.InheritanceModelMerger() {
+					//def merger = new org.apache.maven.model.merge.MavenModelMerger() {
+								protected void mergeModel_Build( Model target, Model source, boolean sourceDominant, Map<Object, Object> context ) {
+									super.mergeModel_Build(target, source, true, context)
+								}
+								protected void mergePlugin_Executions( Plugin target, Plugin source, boolean sourceDominant,
+										Map<Object, Object> context ) {
+										super.mergePlugin_Extensions(target, source, true, context)
+								}
+								protected void mergeReportPlugin_ReportSets( ReportPlugin target, ReportPlugin source, boolean sourceDominant,
+									Map<Object, Object> context ) {
+									super.mergeReportPlugin_ReportSets(target, source, true, context)
+								}
+								protected void mergeModel_Profiles( Model target, Model source, boolean sourceDominant, Map<Object, Object> context ) {
+									super.mergeModel_Profiles(target, source, true, context)
+								}
+							}
+					merger = new org.apache.maven.model.profile.DefaultProfileInjector.ProfileModelMerger()
+					merger.merge(pomModel, tileModel.fragmentModel.clone(), false, null)
+					logger.debug("Merged '${modelGav(tileModel.model)}':${tileModel.fragmentNames} into '${modelGav(pomModel)}'.")
+				}
+			}
 
 			// set a special property at the project so we can read out the list of applied tiles
 			pomModel.properties[".applied-tiles"] = tiles.collect { tile -> GavUtil.modelGav(tile.model) }.join(",")
 
-					lastPom.parent = originalParent
-					logger.debug("Mixed '${modelGav(lastPom)}' with original parent '${parentGav(originalParent)}' as it's  new top level parent.")
-					logger.debug("")
+			lastPom.parent = originalParent
+			logger.debug("Mixed '${modelGav(lastPom)}' with original parent '${parentGav(originalParent)}' as it's  new top level parent.")
+			logger.debug("")
 		}
 
 
