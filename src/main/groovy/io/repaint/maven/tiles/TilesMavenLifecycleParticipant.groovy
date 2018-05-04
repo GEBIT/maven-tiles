@@ -171,10 +171,16 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	}
 
 	/**
-	 * We store the groupId:artifactId -> Artifact of those tiles we have discovered in our meanderings through
-	 * the
+	 * We store the groupId:artifactId of the parent where to apply tiles on. If not specified the tiles will be
+	 * applied on (as parents of) each module building.
 	 */
 	String applyBeforeParent
+
+	/**
+	 * We store the groupId:artifactId of the parent where to merge tiles on. If not specified the tiles will be
+	 * merged into either the parent specified by applyBeforeParent or on each module building if empty.
+	 */
+	String mergeTarget
 
 	/**
 	 * This specifically goes and asks the repository for the "tile" attachment for this pom, not the
@@ -578,6 +584,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		locationTracking: true, twoPhaseBuilding: true, processPlugins: true)
 
 		boolean tilesInjected = false
+		boolean tilesMerged = false
 
 		final DefaultModelBuilder modelBuilder = new DefaultModelBuilderFactory().newInstance()
 		modelBuilder.setLifecycleBindingsInjector(lifecycleBindingsInjector)
@@ -617,14 +624,29 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 					&& model.realVersion == project.originalModel.realVersion
 					&& model.packaging == project.packaging) {
 						// we're at the first (project) level. Apply tiles here if no explicit parent is set
+						if (!mergeTarget || modelRealGa(model) == mergeTarget) {
+							mergeTilesInto(project, tiles, model)
+							tilesMerged = true
+						}
 						if (!applyBeforeParent || modelRealGa(model) == applyBeforeParent) {
 							injectTilesIntoParentStructure(modelBuilder, project, tiles, model, request)
 							tilesInjected = true
 						}
 					} else if (modelRealGa(model) == applyBeforeParent) {
 						// we're at the level with the explicitly selected parent. Apply the tiles here
-						injectTilesIntoParentStructure(modelBuilder, project, tiles, model, request)
-						tilesInjected = true
+						if (!tilesMerged) {
+							// last level where we can merge
+							mergeTilesInto(project, tiles, model)
+							tilesMerged = true
+						}
+						if (!tilesInjected) {
+							injectTilesIntoParentStructure(modelBuilder, project, tiles, model, request)
+							tilesInjected = true
+						}
+					} else if (!tilesMerged && mergeTarget && modelRealGa(model) == mergeTarget) {
+						// explicitly define merge level
+						mergeTilesInto(project, tiles, model)
+						tilesMerged = true
 					} else if (model.packaging == 'tile' || model.packaging == 'pom') {
 						// we could be at a parent that is a tile. In this case return the precomputed model
 						TileModel oneOfUs = tiles.find { TileModel tm ->
@@ -762,6 +784,45 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	 *
 	 * @param tiles - tiles that should make up part of the collection
 	 * @param pomModel - the current project
+	 */
+	@CompileStatic(TypeCheckingMode.SKIP)
+	public void mergeTilesInto(MavenProject project, List<TileModel> tiles, Model pomModel) {
+		if (tiles && tiles.count( { TileModel tileModel -> tileModel.fragmentModel } )) {
+			logger.info("--- tiles-maven-plugin: Merging tiles for ${project.groupId}:${project.artifactId}...")
+			tiles.reverseEach { TileModel tileModel ->
+				// apply merged fragments
+				if (tileModel.fragmentModel) {
+					def merger = new org.apache.maven.model.inheritance.DefaultInheritanceAssembler.InheritanceModelMerger() {
+					//def merger = new org.apache.maven.model.merge.MavenModelMerger() {
+								protected void mergeModel_Build( Model target, Model source, boolean sourceDominant, Map<Object, Object> context ) {
+									super.mergeModel_Build(target, source, true, context)
+								}
+								protected void mergePlugin_Executions( Plugin target, Plugin source, boolean sourceDominant,
+										Map<Object, Object> context ) {
+										super.mergePlugin_Extensions(target, source, true, context)
+								}
+								protected void mergeReportPlugin_ReportSets( ReportPlugin target, ReportPlugin source, boolean sourceDominant,
+									Map<Object, Object> context ) {
+									super.mergeReportPlugin_ReportSets(target, source, true, context)
+								}
+								protected void mergeModel_Profiles( Model target, Model source, boolean sourceDominant, Map<Object, Object> context ) {
+									super.mergeModel_Profiles(target, source, true, context)
+								}
+							}
+					merger = new org.apache.maven.model.profile.DefaultProfileInjector.ProfileModelMerger()
+					merger.merge(pomModel, tileModel.fragmentModel.clone(), false, null)
+					logger.debug("Merged '${modelGav(tileModel.model)}':${tileModel.fragmentNames} into '${modelGav(pomModel)}'.")
+				}
+			}
+		}
+	}
+
+	/**
+	 * Creates a chain of tile parents based on how we discovered them and inserts them into the parent
+	 * chain, above this project and before this project's parent (if any)
+	 *
+	 * @param tiles - tiles that should make up part of the collection
+	 * @param pomModel - the current project
 	 * @param request - the request to build the current project
 	 */
 	@CompileStatic(TypeCheckingMode.SKIP)
@@ -805,31 +866,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 				lastPom = model
 				lastPomFile = tileModel.tilePom
-			}
-			tiles.reverseEach { TileModel tileModel ->
-				// apply merged fragments
-				if (tileModel.fragmentModel) {
-					def merger = new org.apache.maven.model.inheritance.DefaultInheritanceAssembler.InheritanceModelMerger() {
-					//def merger = new org.apache.maven.model.merge.MavenModelMerger() {
-								protected void mergeModel_Build( Model target, Model source, boolean sourceDominant, Map<Object, Object> context ) {
-									super.mergeModel_Build(target, source, true, context)
-								}
-								protected void mergePlugin_Executions( Plugin target, Plugin source, boolean sourceDominant,
-										Map<Object, Object> context ) {
-										super.mergePlugin_Extensions(target, source, true, context)
-								}
-								protected void mergeReportPlugin_ReportSets( ReportPlugin target, ReportPlugin source, boolean sourceDominant,
-									Map<Object, Object> context ) {
-									super.mergeReportPlugin_ReportSets(target, source, true, context)
-								}
-								protected void mergeModel_Profiles( Model target, Model source, boolean sourceDominant, Map<Object, Object> context ) {
-									super.mergeModel_Profiles(target, source, true, context)
-								}
-							}
-					merger = new org.apache.maven.model.profile.DefaultProfileInjector.ProfileModelMerger()
-					merger.merge(pomModel, tileModel.fragmentModel.clone(), false, null)
-					logger.debug("Merged '${modelGav(tileModel.model)}':${tileModel.fragmentNames} into '${modelGav(pomModel)}'.")
-				}
 			}
 
 			// set a special property at the project so we can read out the list of applied tiles
@@ -965,9 +1001,11 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				processConfigurationTile(mavenSession, project, model, tile.value, pomFile)
 			}
 			applyBeforeParent = configuration.getChild("applyBefore")?.value
+			mergeTarget = configuration.getChild("mergeTarget")?.value
 
 			// empty value -> used to explicitly use the current project
 			applyBeforeParent = applyBeforeParent?.empty ? null : applyBeforeParent
+			mergeTarget = mergeTarget?.empty ? applyBeforeParent : mergeTarget
 		}
 	}
 
