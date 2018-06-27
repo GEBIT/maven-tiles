@@ -25,6 +25,8 @@ import static io.repaint.maven.tiles.GavUtil.modelGav
 import static io.repaint.maven.tiles.GavUtil.modelRealGa
 import static io.repaint.maven.tiles.GavUtil.parentGav
 
+import java.util.Iterator
+import java.util.List
 import java.util.Map
 import java.util.Map.Entry
 
@@ -50,7 +52,9 @@ import org.apache.maven.artifact.resolver.ArtifactResolver
 import org.apache.maven.artifact.versioning.VersionRange
 import org.apache.maven.execution.MavenSession
 import org.apache.maven.model.Build
+import org.apache.maven.model.Dependency
 import org.apache.maven.model.DistributionManagement
+import org.apache.maven.model.Exclusion
 import org.apache.maven.model.Model
 import org.apache.maven.model.ModelBase
 import org.apache.maven.model.Parent
@@ -891,7 +895,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		// is there a change in dependencies ?
 		boolean reresolveProjectArtifacts = false
-		if (!project.resolvedArtifacts?.isEmpty() && projectModel.dependencies != newModel.dependencies) {
+		if (!project.resolvedArtifacts?.isEmpty() && !dependenciesEquals(projectModel.dependencies, newModel.dependencies)) {
 			// resolved artifacts are invalid at this point
 			project.resolvedArtifacts = null
 			mavenVersionIsolate.flushProjectArtifacts(project)
@@ -949,6 +953,60 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			resolveDependenciesMethod.accessible = true
 			resolveDependenciesMethod.invoke(projectBuilder, project, mavenSession.getRepositorySession())
 		}
+	}
+
+	private static boolean dependenciesEquals( List<Dependency> a, List<Dependency> b )
+	{
+		if ( a.size() != b.size() )
+		{
+			return false
+		}
+
+		Iterator<Dependency> aI = a.iterator()
+		Iterator<Dependency> bI = b.iterator()
+
+		while ( aI.hasNext() )
+		{
+			Dependency aD = aI.next()
+			Dependency bD = bI.next()
+
+			boolean r = aD.groupId == bD.groupId && aD.artifactId == bD.artifactId && aD.version == bD.version && aD.type == bD.type && aD.classifier == bD.classifier && aD.scope == bD.scope
+
+			r &= exclusionsEquals( aD.getExclusions(), bD.getExclusions() )
+
+			if ( !r )
+			{
+				return false
+			}
+		}
+
+		return true
+	}
+
+	private static boolean exclusionsEquals( List<Exclusion> a, List<Exclusion> b )
+	{
+		if ( a.size() != b.size() )
+		{
+			return false
+		}
+
+		Iterator<Exclusion> aI = a.iterator();
+		Iterator<Exclusion> bI = b.iterator();
+
+		while ( aI.hasNext() )
+		{
+			Exclusion aD = aI.next()
+			Exclusion bD = bI.next()
+
+			boolean r = aD.groupId == bD.groupId && aD.artifactId == bD.artifactId
+
+			if ( !r )
+			{
+				return false
+			}
+		}
+
+		return true
 	}
 
 	protected void loadAllDiscoveredTiles(MavenSession mavenSession, MavenProject project) throws MavenExecutionException {
