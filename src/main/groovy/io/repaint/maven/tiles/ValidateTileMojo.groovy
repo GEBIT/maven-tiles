@@ -14,7 +14,7 @@ import org.apache.maven.plugins.annotations.ResolutionScope
  * @author: Mark Derricutt - https://plus.google.com/+MarkDerricutt
  */
 @CompileStatic
-@Mojo(name = "validate", requiresProject = true, requiresDependencyResolution = ResolutionScope.NONE)
+@Mojo(name = "validate", requiresProject = true, requiresDependencyResolution = ResolutionScope.NONE, threadSafe = true)
 class ValidateTileMojo extends AbstractTileMojo {
 	@Component
 	MavenSession session
