@@ -417,6 +417,17 @@ public class TilesMavenLifecycleParticipantTest {
 		assert TilesMavenLifecycleParticipant.getTileData(session).processedTiles.size() == 4
 	}
 
+	@Test
+	public void testRemoveTiles() {
+		MavenProject project = fakeProjectFromFile("remove-tile-pom")
+		MavenSession session = fakeSessionForProject(project)
+
+		resetParticipantToLoadTilesFromDisk()
+
+		participant.orchestrateMerge(session, project)
+		assert TilesMavenLifecycleParticipant.getTileData(session).processedTiles.size() == 0
+	}
+
 	protected Model createBasicModel() {
 		Model model = new Model()
 

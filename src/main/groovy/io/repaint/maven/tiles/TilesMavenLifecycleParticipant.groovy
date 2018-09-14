@@ -1079,15 +1079,27 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	}
 
 	protected void processConfigurationTile(MavenSession mavenSession, MavenProject project, Model model, String tileDependencyName, File pomFile) {
+		boolean removeFlag = false
+		if (tileDependencyName.startsWith("!")) {
+			// remove a tile if present
+			tileDependencyName = tileDependencyName.drop(1)
+			removeFlag = true
+		}
 		Artifact unprocessedTile = turnPropertyIntoUnprocessedTile(tileDependencyName, project, pomFile)
 		TileData tileData = getTileData(mavenSession)
 		String depName = artifactName(unprocessedTile)
 
 		if (!tileData.processedTiles.containsKey(depName)) {
 			if (tileData.unprocessedTiles.containsKey(depName)) {
-				logger.warn(String.format("tiles-maven-plugin in project %s requested for same tile dependency %s",
-						modelGav(model), artifactGav(unprocessedTile)))
-			} else {
+				if (removeFlag) {
+					logger.debug("Removing tile ${artifactGav(unprocessedTile)}")
+					tileData.unprocessedTiles.remove(depName)
+					tileData.tileDiscoveryOrder.remove(depName)
+				} else {
+					logger.warn(String.format("tiles-maven-plugin in project %s requested for same tile dependency %s",
+							modelGav(model), artifactGav(unprocessedTile)))
+				}
+			} else if (!removeFlag) {
 				logger.debug("Adding tile ${artifactGav(unprocessedTile)}")
 
 				tileData.unprocessedTiles.put(depName, unprocessedTile)
