@@ -102,7 +102,7 @@ class TileModel {
     model.artifactId = artifact.artifactId
     model.packaging = "pom"
 
-    // Update each tile'd plugin's execution id with the tile GAV for easier debugging/tracing
+    // Update each tile'd plugin's execution id with the tile GA for easier debugging/tracing
     if (model.build) {
       if (model.build.plugins) {
         model.build.plugins.each { plugin ->
@@ -113,7 +113,7 @@ class TileModel {
                 // do not rewrite the current execution id
                 return
               }
-              execution.id = GavUtil.artifactGav(artifact) + "::" + execution.id
+              execution.id = GavUtil.artifactName(artifact) + "::" + execution.id
             }
           }
         }
