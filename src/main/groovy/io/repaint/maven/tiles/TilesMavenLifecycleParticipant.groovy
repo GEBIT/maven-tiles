@@ -60,6 +60,7 @@ import org.apache.maven.model.ModelBase
 import org.apache.maven.model.Parent
 import org.apache.maven.model.Plugin
 import org.apache.maven.model.PluginManagement
+import org.apache.maven.model.Profile;
 import org.apache.maven.model.ReportPlugin
 import org.apache.maven.model.Repository
 import org.apache.maven.model.Resource
@@ -71,10 +72,14 @@ import org.apache.maven.model.building.ModelBuildingListener
 import org.apache.maven.model.building.ModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingResult
 import org.apache.maven.model.building.ModelCache
+import org.apache.maven.model.building.ModelProblemCollector
+import org.apache.maven.model.building.ModelProblemCollectorRequest
 import org.apache.maven.model.building.ModelProcessor
 import org.apache.maven.model.building.ModelSource2
 import org.apache.maven.model.io.ModelParseException
 import org.apache.maven.model.plugin.LifecycleBindingsInjector
+import org.apache.maven.model.profile.DefaultProfileActivationContext
+import org.apache.maven.model.profile.ProfileSelector
 import org.apache.maven.model.resolution.InvalidRepositoryException
 import org.apache.maven.model.resolution.ModelResolver
 import org.apache.maven.model.resolution.UnresolvableModelException
@@ -86,6 +91,7 @@ import org.apache.maven.project.ProjectBuildingHelper
 import org.apache.maven.project.ProjectBuildingRequest
 import org.apache.maven.project.ProjectBuildingResult
 import org.apache.maven.project.artifact.ProjectArtifact.PomArtifactHandler
+import org.apache.maven.repository.RepositorySystem
 import org.apache.maven.shared.filtering.MavenFileFilter
 import org.apache.maven.shared.filtering.MavenFileFilterRequest
 import org.apache.maven.shared.filtering.MavenResourcesExecution
@@ -140,9 +146,15 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	@Requirement
 	ProjectBuilder projectBuilder
+	
+	@Requirement
+	ProfileSelector profileSelector
 
 	@Requirement
 	LifecycleBindingsInjector lifecycleBindingsInjector
+
+	@Requirement
+	RepositorySystem repositorySystem
 
 	/**
 	 * Component used to create a repository.
@@ -285,6 +297,10 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 					prjRequest.project = null
 					prjRequest.setResolveDependencies(false)
 					prjRequest.userProperties = mavenSession.userProperties
+					prjRequest.systemProperties = mavenSession.systemProperties
+					prjRequest.profiles = mavenSession.request.profiles
+					prjRequest.activeProfileIds = mavenSession.request.projectBuildingRequest.activeProfileIds
+					prjRequest.inactiveProfileIds = mavenSession.request.projectBuildingRequest.inactiveProfileIds
 					ProjectBuildingResult prjResult = projectBuilder.build(tileArtifact.file, prjRequest)
 					// project building might be expensive, so cache it in a way that will cache it also for m2e
 					tileEffective = getTileFromProject(mavenSession, prjResult.project)
@@ -451,6 +467,34 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		this.remoteRepositories = mavenSession.request.remoteRepositories
 		this.localRepository = mavenSession.request.localRepository
+
+		// get the activate profiles from settings according to activation rules now
+		DefaultProfileActivationContext context = new DefaultProfileActivationContext()
+		context.activeProfileIds = mavenSession.request.projectBuildingRequest.activeProfileIds
+		context.inactiveProfileIds = mavenSession.request.projectBuildingRequest.inactiveProfileIds
+		context.systemProperties = mavenSession.request.systemProperties
+		context.userProperties = mavenSession.request.userProperties
+		context.projectDirectory = mavenSession.request.pom ? mavenSession.request.pom.parentFile : (File) null 
+
+		// manually add repositories from these profiles (if not activated yet)
+		List<Profile> activeExternalProfiles = profileSelector.getActiveProfiles(mavenSession.request.profiles, context, 
+			new ModelProblemCollector() {
+				@Override
+				public void add(ModelProblemCollectorRequest request) {
+					// ignore
+				}
+			})
+		for (Profile profile : activeExternalProfiles) {
+			if (!mavenSession.request.projectBuildingRequest.activeProfileIds.contains(profile.id)) {
+				logger.info("Activating profile from settings: " + profile.id)
+				for (Repository remoteRepository : profile.repositories)
+				{
+					ArtifactRepository repo = repositorySystem.buildArtifactRepository( remoteRepository )
+					repositorySystem.injectAuthentication(mavenSession.repositorySession, Collections.singletonList(repo))
+					remoteRepositories.add(repo)
+				}
+			}
+		}
 
 		this.mavenVersionIsolate = discoverMavenVersion(mavenSession)
 
