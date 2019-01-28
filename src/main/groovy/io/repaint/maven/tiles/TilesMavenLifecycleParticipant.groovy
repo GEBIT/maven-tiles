@@ -40,6 +40,7 @@ import io.repaint.maven.tiles.isolators.MavenVersionIsolator
 
 import org.apache.maven.AbstractMavenLifecycleParticipant
 import org.apache.maven.MavenExecutionException
+import org.apache.maven.RepositoryUtils
 import org.apache.maven.artifact.Artifact
 import org.apache.maven.artifact.DefaultArtifact
 import org.apache.maven.artifact.handler.DefaultArtifactHandler
@@ -146,7 +147,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	@Requirement
 	ProjectBuilder projectBuilder
-	
+
 	@Requirement
 	ProfileSelector profileSelector
 
@@ -474,10 +475,10 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		context.inactiveProfileIds = mavenSession.request.projectBuildingRequest.inactiveProfileIds
 		context.systemProperties = mavenSession.request.systemProperties
 		context.userProperties = mavenSession.request.userProperties
-		context.projectDirectory = mavenSession.request.pom ? mavenSession.request.pom.parentFile : (File) null 
+		context.projectDirectory = mavenSession.request.pom ? mavenSession.request.pom.parentFile : (File) null
 
 		// manually add repositories from these profiles (if not activated yet)
-		List<Profile> activeExternalProfiles = profileSelector.getActiveProfiles(mavenSession.request.profiles, context, 
+		List<Profile> activeExternalProfiles = profileSelector.getActiveProfiles(mavenSession.request.profiles, context,
 			new ModelProblemCollector() {
 				@Override
 				public void add(ModelProblemCollectorRequest request) {
@@ -622,14 +623,15 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		// this allows us to know when the ModelProcessor is called that we should inject the tiles into the
 		// parent structure
 		ModelSource2 mainArtifactModelSource = new CachingModelSource(project.artifact, project.file)
+
 		ModelBuildingRequest request = new DefaultModelBuildingRequest(modelSource: mainArtifactModelSource,
-		pomFile: project.file, modelResolver: createModelResolver(), modelCache: modelCache,
-		systemProperties: mavenSession.request.systemProperties, userProperties: mavenSession.request.userProperties,
-		profiles: mavenSession.request.projectBuildingRequest.profiles,
-		activeProfileIds: mavenSession.request.projectBuildingRequest.activeProfileIds,
-		inactiveProfileIds: mavenSession.request.projectBuildingRequest.inactiveProfileIds,
-		modelBuildingListener: modelBuildingListener,
-		locationTracking: true, twoPhaseBuilding: true, processPlugins: true)
+				pomFile: project.file, modelResolver: createModelResolver(), modelCache: modelCache,
+				systemProperties: mavenSession.request.systemProperties, userProperties: mavenSession.request.userProperties,
+				profiles: mavenSession.request.projectBuildingRequest.profiles,
+				activeProfileIds: mavenSession.request.projectBuildingRequest.activeProfileIds,
+				inactiveProfileIds: mavenSession.request.projectBuildingRequest.inactiveProfileIds,
+				modelBuildingListener: modelBuildingListener,
+				locationTracking: true, twoPhaseBuilding: true, processPlugins: true)
 
 		boolean tilesInjected = false
 		boolean tilesMerged = false
@@ -734,37 +736,58 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	}
 
 	protected ModelResolver createModelResolver() {
-		// this is for resolving parents, so always poms
+		return new TilesProjectModelResolver(remoteRepositories)
+	}
 
-		return new ModelResolver() {
-					ModelSource2 resolveModel(String groupId, String artifactId, String version) throws UnresolvableModelException {
-						Artifact artifact = new DefaultArtifact(groupId, artifactId, VersionRange.createFromVersion(version), "compile",
-								"pom", null, new DefaultArtifactHandler("pom"))
+	class TilesProjectModelResolver implements ModelResolver {
 
-						mavenVersionIsolate.resolveVersionRange(artifact)
-						resolver.resolve(artifact, remoteRepositories, localRepository)
+		List<ArtifactRepository> effectiveRemoteRepositories
 
-						return new CachingModelSource(artifact)
-					}
+		TilesProjectModelResolver(List<ArtifactRepository> remoteRepositories) {
+			effectiveRemoteRepositories = new ArrayList<>(remoteRepositories ?: new ArrayList<ArtifactRepository>())
+		}
 
-					ModelSource2 resolveModel(Parent parent) throws UnresolvableModelException {
-						return resolveModel(parent.groupId, parent.artifactId, parent.version)
-					}
-
-					void addRepository(Repository repository) throws InvalidRepositoryException {
-					}
-
-					void addRepository(Repository repository, boolean wat) throws InvalidRepositoryException {
-					}
-
-					void resetRepositories() {
-					}
-
-					ModelResolver newCopy() {
-						return createModelResolver()
+		@Override
+		public void addRepository( final Repository repository, boolean replace )
+			throws InvalidRepositoryException {
+				if (replace) {
+					effectiveRemoteRepositories.removeIf({ it.id == repository.id })
+				} else {
+					if (effectiveRemoteRepositories.stream().anyMatch({ it.id == repository.id })) {
+						return
 					}
 				}
+				ArtifactRepository repo = repositorySystem.buildArtifactRepository( repository )
+				repositorySystem.injectAuthentication(mavenSession.repositorySession, Collections.singletonList(repo))
+				effectiveRemoteRepositories.add(repo)
+		}
 
+		@Override
+		public void addRepository( Repository repository )
+			throws InvalidRepositoryException {
+			addRepository(repository, false)
+		}
+
+		@Override
+		ModelSource2 resolveModel(String groupId, String artifactId, String version) throws UnresolvableModelException {
+			Artifact artifact = new DefaultArtifact(groupId, artifactId, VersionRange.createFromVersion(version), "compile",
+					"pom", null, new DefaultArtifactHandler("pom"))
+
+			mavenVersionIsolate.resolveVersionRange(artifact)
+			TilesMavenLifecycleParticipant.this.resolver.resolve(artifact, effectiveRemoteRepositories, localRepository)
+
+			return new CachingModelSource(artifact)
+		}
+
+		@Override
+		ModelSource2 resolveModel(Parent parent) throws UnresolvableModelException {
+			return resolveModel(parent.groupId, parent.artifactId, parent.version)
+		}
+
+		@Override
+		ModelResolver newCopy() {
+			return new TilesProjectModelResolver(effectiveRemoteRepositories)
+		}
 	}
 
 	/**
