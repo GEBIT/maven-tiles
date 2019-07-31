@@ -62,7 +62,12 @@ import org.apache.maven.model.building.ModelProblemCollector
 import org.apache.maven.model.building.ModelProblemCollectorRequest
 import org.apache.maven.model.building.ModelProcessor
 import org.apache.maven.model.building.ModelSource2
+import org.apache.maven.model.inheritance.DefaultInheritanceAssembler
+import org.apache.maven.model.inheritance.InheritanceAssembler
 import org.apache.maven.model.io.ModelParseException
+import org.apache.maven.model.io.ModelWriter
+import org.apache.maven.model.normalization.DefaultModelNormalizer
+import org.apache.maven.model.normalization.ModelNormalizer
 import org.apache.maven.model.plugin.LifecycleBindingsInjector
 import org.apache.maven.model.profile.DefaultProfileActivationContext
 import org.apache.maven.model.profile.ProfileSelector
@@ -121,6 +126,9 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	@Requirement
 	Logger logger
+
+	@Requirement
+	ModelWriter modelWriter
 
 	@Requirement
 	ArtifactResolver resolver
@@ -801,8 +809,10 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	@CompileStatic(TypeCheckingMode.SKIP)
 	protected void putOriginalModelInCache(String groupId, String artifactId, String version, Model model, File file) {
-		modelCache.putOriginal(groupId, artifactId, version, org.apache.maven.model.building.ModelCacheTag.RAW.name,
+		if (modelCache) {
+			modelCache.putOriginal(groupId, artifactId, version, org.apache.maven.model.building.ModelCacheTag.RAW.name,
 				mavenVersionIsolate.createModelData(model, file))
+		}
 	}
 
 	protected void putOriginalModelInCache(Model model, File file) {
@@ -812,6 +822,9 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	@CompileStatic(TypeCheckingMode.SKIP)
 	protected Model getOriginalModelFromCache(String groupId, String artifactId, String version) {
 		// stuff the original model in the original cache
+		if (!modelCache) {
+			return null
+		}
 		def modelData = modelCache.getOriginal(groupId, artifactId, version, org.apache.maven.model.building.ModelCacheTag.RAW.name)
 		if (modelData) {
 			return modelData.model.clone()
@@ -930,35 +943,86 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				originalParent.version = interpolator.interpolate(originalParent.version)
 			}
 
-			tiles.each { TileModel tileModel ->
-				Model model = tileModel.model
+			// cached id of combined tiles
+			def tilesId = tiles.collect { tile -> tile.model.groupId + "_" + tile.model.artifactId + "_" + tile.model.version}.join("_")
+			Model combinedTilesModel = getOriginalModelFromCache("tile", tilesId, "1")
+			if (combinedTilesModel == null) {
+				def merger = new DefaultInheritanceAssembler.InheritanceModelMerger() {
+					@Override
+					protected void mergeModel_Profiles( Model target, Model source, boolean sourceDominant,
+							Map<Object, Object> context )
+					{
+						List<Profile> src = source.getProfiles();
+						if ( !src.isEmpty() )
+						{
+							List<Profile> tgt = target.getProfiles();
+							Map<Object, Profile> merged = new LinkedHashMap<>( ( src.size() + tgt.size() ) * 2 );
 
-				Parent modelParent = new Parent(groupId: model.groupId, version: model.version,
-					artifactId: model.artifactId)
-				lastPom.parent = modelParent
+							for ( Profile element : tgt )
+							{
+								Object key = getProfileKey( element );
+								merged.put( key, element );
+							}
 
-				if (pomModel != lastPom) {
-					putModelInCache(modelBuilder, lastPom, request, lastPomFile)
-					logger.debug("Mixed '${modelGav(lastPom)}' with tile '${parentGav(modelParent)}' as it's new parent.")
+							for ( Profile element : src )
+							{
+								Object key = getProfileKey( element );
+								if (merged.containsKey( key )) {
+									mergeProfile( merged[key], element, sourceDominant, context) 
+								} else {
+									merged.put( key, element );
+								}
+							}
+
+							target.setProfiles( new ArrayList<>( merged.values() ) );
+						}
+					}
+					@Override
+					protected Object getProfileKey(Profile profile) {
+						return profile.getId();
+					}
 				}
 
-				lastPom = model
-				lastPomFile = tileModel.tilePom
+				// create the combined model
+				tiles.each { TileModel tileModel ->
+					Model model = tileModel.model
+					if (combinedTilesModel == null) {
+						combinedTilesModel = model.clone()
+						combinedTilesModel.groupId = "tiles"
+						combinedTilesModel.artifactId = tilesId
+						combinedTilesModel.version = "1"
+					} else {
+						merger.merge(combinedTilesModel, tileModel.model, false, Collections.emptyMap())
+					}
+					logger.debug("Mixed '${modelGav(lastPom)}' with tile '${modelGav(model)}'.")
+				}
+
+				// put it into the cache
+				putOriginalModelInCache("tile", tilesId, "1", combinedTilesModel, null)
+
+				// link it into the structure
+				Parent modelParent = new Parent(groupId: lastPom.groupId, version: lastPom.version,
+					artifactId: lastPom.artifactId + "-tiles")
+				lastPom.parent = modelParent
+				putModelInCache(modelBuilder, lastPom, request, lastPomFile)
+
+				combinedTilesModel.parent = originalParent
+				putOriginalModelInCache(modelParent.groupId, modelParent.artifactId, modelParent.version, combinedTilesModel, null)
+			} else {
+				Parent modelParent = new Parent(groupId: lastPom.groupId, version: lastPom.version,
+					artifactId: lastPom.artifactId + "-tiles")
+				lastPom.parent = modelParent
+				putModelInCache(modelBuilder, lastPom, request, lastPomFile)
+
+				combinedTilesModel.parent = originalParent
+				putOriginalModelInCache(modelParent.groupId, modelParent.artifactId, modelParent.version, combinedTilesModel, null)
 			}
 
 			// set a special property at the project so we can read out the list of applied tiles
 			pomModel.properties[".applied-tiles"] = tiles.collect { tile -> GavUtil.modelGav(tile.model) }.join(",")
 
-			lastPom.parent = originalParent
-			logger.debug("Mixed '${modelGav(lastPom)}' with original parent '${parentGav(originalParent)}' as it's  new top level parent.")
 			logger.debug("")
 		}
-
-
-		if (pomModel != lastPom) {
-			putModelInCache(modelBuilder, lastPom, request, lastPomFile)
-		}
-
 	}
 
 	@CompileStatic(TypeCheckingMode.SKIP)

@@ -288,9 +288,14 @@ public class TilesMavenLifecycleParticipantTest {
 		File pomFile = new File('src/test/resources/empty-pom.xml')
 		Model pomModel = readModel(pomFile)
 
+		Map<String, Model> modelCache = new HashMap<>()
 		participant = new TilesMavenLifecycleParticipant() {
 					@Override
 					protected void putModelInCache(ModelBuilder modelBuilder, Model model, ModelBuildingRequest request, File pFile) {
+					}
+					@Override
+					protected void putOriginalModelInCache(String groupId, String artifactId, String version, Model model, File pFile) {
+						modelCache.put(groupId + ':' + artifactId, model)
 					}
 				}
 
@@ -300,17 +305,16 @@ public class TilesMavenLifecycleParticipantTest {
 				[getGroupId: { pomModel.groupId }, getArtifactId: { pomModel.artifactId }, getProperties: { new Properties() } ] as MavenProject,
 				tiles, pomModel, [getPomFile: { return pomFile } ] as ModelBuildingRequest)
 
-		assert pomModel.parent.artifactId == 'session-license'
-		assert sessionLicenseTile.model.parent.artifactId == 'extended-syntax'
-		assert extendedSyntaxTile.model.parent.artifactId == 'antrun1'
-		assert antrunTile.model.parent == null
+		assert pomModel.parent.artifactId == 'empty-pom-tiles'
+		assert pomModel.properties.".applied-tiles" == "io.repaint.tiles:session-license:1,io.repaint.tiles:extended-syntax:1,io.repaint.tiles:antrun1:1"
+		assert modelCache.get('io.repaint.tiles:empty-pom-tiles')?.parent == null
 
 		pomModel.parent = new Parent(groupId: 'io.repaint.tiles', artifactId: 'fake-parent', version: '1')
 
 		participant.injectTilesIntoParentStructure(null,
 				[getGroupId: { pomModel.groupId }, getArtifactId: { pomModel.artifactId }, getProperties: { new Properties() } ] as MavenProject,
 				tiles, pomModel, [getPomFile: { return pomFile } ] as ModelBuildingRequest)
-		assert antrunTile.model.parent.artifactId == 'fake-parent'
+		assert modelCache.get('io.repaint.tiles:empty-pom-tiles')?.parent?.artifactId == 'fake-parent'
 	}
 
 	@Test

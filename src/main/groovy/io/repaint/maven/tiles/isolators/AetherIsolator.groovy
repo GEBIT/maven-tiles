@@ -33,7 +33,7 @@ class AetherIsolator extends BaseMavenIsolator {
 	@Override
 	@CompileStatic(TypeCheckingMode.SKIP)
 	def createModelData(Model model, File pomFile) {
-		return org.apache.maven.model.building.ModelData.newInstance(new FileModelSource(pomFile), model, model.groupId, model.artifactId, model.version)
+		return org.apache.maven.model.building.ModelData.newInstance(pomFile ? new FileModelSource(pomFile) : null, model, model.groupId, model.artifactId, model.version)
 	}
 
 	AetherIsolator(MavenSession mavenSession) throws MavenExecutionException {
