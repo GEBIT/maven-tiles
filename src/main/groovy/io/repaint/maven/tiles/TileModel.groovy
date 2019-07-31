@@ -3,9 +3,10 @@ import groovy.transform.CompileStatic
 import groovy.transform.TypeCheckingMode
 import groovy.xml.XmlUtil
 import org.apache.maven.artifact.Artifact
+import org.apache.maven.model.InputSource
 import org.apache.maven.model.Model
 import org.apache.maven.model.Reporting
-import org.apache.maven.model.io.xpp3.MavenXpp3Reader
+import org.apache.maven.model.io.xpp3.MavenXpp3ReaderEx
 import org.codehaus.plexus.util.xml.Xpp3Dom
 /**
  * This will parse a tile.xml file with the intent of removing extra syntax, holding onto it and then
@@ -72,12 +73,12 @@ class TileModel {
   public void loadTile(File tilePom) {
     this.tilePom = tilePom
 
-    MavenXpp3Reader pomReader = new MavenXpp3Reader()
+    MavenXpp3ReaderEx pomReader = new MavenXpp3ReaderEx()
 
-    model = pomReader.read(strippedPom(false))
+    model = pomReader.read(strippedPom(false), false, new InputSource())
 	Reader tileMergeReader = strippedPom(true)
 	if (tileMergeReader) {
-      fragmentModel = pomReader.read(tileMergeReader)
+      fragmentModel = pomReader.read(tileMergeReader, false, new InputSource())
     }
   }
 

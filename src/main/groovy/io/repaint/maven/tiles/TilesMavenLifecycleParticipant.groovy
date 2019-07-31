@@ -19,28 +19,13 @@ package io.repaint.maven.tiles
 
 import static io.repaint.maven.tiles.GavUtil.artifactGav
 import static io.repaint.maven.tiles.GavUtil.artifactName
-import static io.repaint.maven.tiles.GavUtil.getRealGroupId
 import static io.repaint.maven.tiles.GavUtil.modelGa
 import static io.repaint.maven.tiles.GavUtil.modelGav
 import static io.repaint.maven.tiles.GavUtil.modelRealGa
 import static io.repaint.maven.tiles.GavUtil.parentGav
 
-import java.util.Iterator
-import java.util.List
-import java.util.Map
-import java.util.Map.Entry
-
-import groovy.transform.CompileStatic
-import groovy.transform.TypeCheckingMode
-import io.repaint.maven.tiles.TilesMavenLifecycleParticipant.CachingModelSource
-import io.repaint.maven.tiles.isolators.AetherIsolator
-import io.repaint.maven.tiles.isolators.Maven30Isolator
-import io.repaint.maven.tiles.isolators.Maven35Isolator
-import io.repaint.maven.tiles.isolators.MavenVersionIsolator
-
 import org.apache.maven.AbstractMavenLifecycleParticipant
 import org.apache.maven.MavenExecutionException
-import org.apache.maven.RepositoryUtils
 import org.apache.maven.artifact.Artifact
 import org.apache.maven.artifact.DefaultArtifact
 import org.apache.maven.artifact.handler.DefaultArtifactHandler
@@ -56,13 +41,14 @@ import org.apache.maven.model.Build
 import org.apache.maven.model.Dependency
 import org.apache.maven.model.DistributionManagement
 import org.apache.maven.model.Exclusion
+import org.apache.maven.model.InputLocation
 import org.apache.maven.model.Model
-import org.apache.maven.model.ModelBase
 import org.apache.maven.model.Parent
 import org.apache.maven.model.Plugin
 import org.apache.maven.model.PluginManagement
 import org.apache.maven.model.Profile;
 import org.apache.maven.model.ReportPlugin
+import org.apache.maven.model.ReportSet
 import org.apache.maven.model.Repository
 import org.apache.maven.model.Resource
 import org.apache.maven.model.building.DefaultModelBuilder
@@ -72,7 +58,6 @@ import org.apache.maven.model.building.ModelBuilder
 import org.apache.maven.model.building.ModelBuildingListener
 import org.apache.maven.model.building.ModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingResult
-import org.apache.maven.model.building.ModelCache
 import org.apache.maven.model.building.ModelProblemCollector
 import org.apache.maven.model.building.ModelProblemCollectorRequest
 import org.apache.maven.model.building.ModelProcessor
@@ -91,7 +76,6 @@ import org.apache.maven.project.ProjectBuilder
 import org.apache.maven.project.ProjectBuildingHelper
 import org.apache.maven.project.ProjectBuildingRequest
 import org.apache.maven.project.ProjectBuildingResult
-import org.apache.maven.project.artifact.ProjectArtifact.PomArtifactHandler
 import org.apache.maven.repository.RepositorySystem
 import org.apache.maven.shared.filtering.MavenFileFilter
 import org.apache.maven.shared.filtering.MavenFileFilterRequest
@@ -107,6 +91,14 @@ import org.codehaus.plexus.util.xml.pull.XmlPullParserException
 import org.eclipse.aether.RepositoryCache
 import org.eclipse.aether.RepositorySystemSession
 import org.xml.sax.SAXParseException
+
+import groovy.transform.CompileStatic
+import groovy.transform.TypeCheckingMode
+import io.repaint.maven.tiles.TilesMavenLifecycleParticipant.CachingModelSource
+import io.repaint.maven.tiles.isolators.AetherIsolator
+import io.repaint.maven.tiles.isolators.Maven30Isolator
+import io.repaint.maven.tiles.isolators.Maven35Isolator
+import io.repaint.maven.tiles.isolators.MavenVersionIsolator
 
 
 /**
@@ -875,6 +867,21 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 								protected void mergeReportPlugin_ReportSets( ReportPlugin target, ReportPlugin source, boolean sourceDominant,
 									Map<Object, Object> context ) {
 									super.mergeReportPlugin_ReportSets(target, source, true, context)
+									for (ReportSet reportSet : target.getReportSets()) {
+										InputLocation reportsLocation = reportSet.getLocation("reports")
+										if (!reportsLocation) {
+											// fix for Maven 3.6.1
+											reportsLocation = new InputLocation()
+											reportSet.setLocation( "reports", reportsLocation )
+										}
+										for (int n=0; n<reportSet.getReports().size(); ++n) {
+											InputLocation reportLocation = reportsLocation.getLocation(n)
+											if (!reportLocation) {
+												reportLocation = new InputLocation()
+												reportsLocation.setLocation(n, reportLocation)
+											}
+										}
+									}
 								}
 								protected void mergeModel_Profiles( Model target, Model source, boolean sourceDominant, Map<Object, Object> context ) {
 									super.mergeModel_Profiles(target, source, true, context)
