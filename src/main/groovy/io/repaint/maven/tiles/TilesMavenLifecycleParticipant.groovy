@@ -868,39 +868,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			tiles.reverseEach { TileModel tileModel ->
 				// apply merged fragments
 				if (tileModel.fragmentModel) {
-					def merger = new org.apache.maven.model.inheritance.DefaultInheritanceAssembler.InheritanceModelMerger() {
-					//def merger = new org.apache.maven.model.merge.MavenModelMerger() {
-								protected void mergeModel_Build( Model target, Model source, boolean sourceDominant, Map<Object, Object> context ) {
-									super.mergeModel_Build(target, source, true, context)
-								}
-								protected void mergePlugin_Executions( Plugin target, Plugin source, boolean sourceDominant,
-										Map<Object, Object> context ) {
-										super.mergePlugin_Extensions(target, source, true, context)
-								}
-								protected void mergeReportPlugin_ReportSets( ReportPlugin target, ReportPlugin source, boolean sourceDominant,
-									Map<Object, Object> context ) {
-									super.mergeReportPlugin_ReportSets(target, source, true, context)
-									for (ReportSet reportSet : target.getReportSets()) {
-										InputLocation reportsLocation = reportSet.getLocation("reports")
-										if (!reportsLocation) {
-											// fix for Maven 3.6.1
-											reportsLocation = new InputLocation()
-											reportSet.setLocation( "reports", reportsLocation )
-										}
-										for (int n=0; n<reportSet.getReports().size(); ++n) {
-											InputLocation reportLocation = reportsLocation.getLocation(n)
-											if (!reportLocation) {
-												reportLocation = new InputLocation()
-												reportsLocation.setLocation(n, reportLocation)
-											}
-										}
-									}
-								}
-								protected void mergeModel_Profiles( Model target, Model source, boolean sourceDominant, Map<Object, Object> context ) {
-									super.mergeModel_Profiles(target, source, true, context)
-								}
-							}
-					merger = new org.apache.maven.model.profile.DefaultProfileInjector.ProfileModelMerger()
+					def merger = new org.apache.maven.model.profile.DefaultProfileInjector.ProfileModelMerger()
 					merger.merge(pomModel, tileModel.fragmentModel.clone(), false, null)
 					logger.debug("Merged '${modelGav(tileModel.model)}':${tileModel.fragmentNames} into '${modelGav(pomModel)}'.")
 				}
@@ -947,6 +915,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			def tilesId = tiles.collect { tile -> tile.model.groupId + "_" + tile.model.artifactId + "_" + tile.model.version}.join("_")
 			Model combinedTilesModel = getOriginalModelFromCache("tile", tilesId, "1")
 			if (combinedTilesModel == null) {
+				def profileMerger = new org.apache.maven.model.profile.DefaultProfileInjector.ProfileModelMerger();
 				def merger = new DefaultInheritanceAssembler.InheritanceModelMerger() {
 					@Override
 					protected void mergeModel_Profiles( Model target, Model source, boolean sourceDominant,
@@ -977,9 +946,30 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 							target.setProfiles( new ArrayList<>( merged.values() ) );
 						}
 					}
+
 					@Override
 					protected Object getProfileKey(Profile profile) {
 						return profile.getId();
+					}
+
+					@Override
+					protected void mergeProfile( Profile target, Profile source, boolean sourceDominant, Map<Object, Object> context )
+					{
+						profileMerger.mergeModelBase( target, source );
+						if ( source.getBuild() != null ) {
+							if ( target.getBuild() == null ) {
+								target.setBuild( source.getBuild().clone() );
+							} else {
+								profileMerger.mergeBuildBase( target.getBuild(), source.getBuild() );
+							}
+						}
+						if ( source.getActivation() != null) {
+							if ( target.getActivation() == null ) {
+								target.setActivation( source.getActivation().clone() );
+							} else {
+								profileMerger.mergeActivation(target.getActivation(), source.getActivation(), false, context );
+							}
+						}
 					}
 				}
 
