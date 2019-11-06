@@ -103,6 +103,7 @@ import io.repaint.maven.tiles.TilesMavenLifecycleParticipant.CachingModelSource
 import io.repaint.maven.tiles.isolators.AetherIsolator
 import io.repaint.maven.tiles.isolators.Maven30Isolator
 import io.repaint.maven.tiles.isolators.Maven35Isolator
+import io.repaint.maven.tiles.isolators.Maven36Isolator
 import io.repaint.maven.tiles.isolators.MavenVersionIsolator
 
 
@@ -294,14 +295,12 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				if (!tileEffective
 						|| !tileEffective.exists()
 						|| tileEffective.lastModified() < tileArtifact.file.lastModified()) {
-					ProjectBuildingRequest prjRequest = new DefaultProjectBuildingRequest(mavenSession.projectBuildingRequest)
+					ProjectBuildingRequest prjRequest = getProjectBuildingRequest(true)
 					prjRequest.project = null
 					prjRequest.setResolveDependencies(false)
 					prjRequest.userProperties = mavenSession.userProperties
 					prjRequest.systemProperties = mavenSession.systemProperties
 					prjRequest.profiles = mavenSession.request.profiles
-					prjRequest.activeProfileIds = mavenSession.request.projectBuildingRequest.activeProfileIds
-					prjRequest.inactiveProfileIds = mavenSession.request.projectBuildingRequest.inactiveProfileIds
 					ProjectBuildingResult prjResult = projectBuilder.build(tileArtifact.file, prjRequest)
 					// project building might be expensive, so cache it in a way that will cache it also for m2e
 					tileEffective = getTileFromProject(mavenSession, prjResult.project)
@@ -443,16 +442,33 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		MavenVersionIsolator isolator
 
 		try {
-			isolator = new Maven35Isolator(mavenSession)
+			isolator = new Maven36Isolator(mavenSession)
 		} catch (MavenExecutionException mee) {
 			try {
-				isolator = new AetherIsolator(mavenSession)
+				isolator = new Maven35Isolator(mavenSession)
 			} catch (MavenExecutionException mee2) {
-				isolator = new Maven30Isolator(mavenSession)
+				try {
+					isolator = new AetherIsolator(mavenSession)
+				} catch (MavenExecutionException mee3) {
+					isolator = new Maven30Isolator(mavenSession)
+				}
 			}
 		}
 
+
 		return isolator
+	}
+
+	private ProjectBuildingRequest getProjectBuildingRequest(boolean createNew) {
+		ProjectBuildingRequest result = mavenSession.request.projectBuildingRequest
+		if (!result.repositorySession) {
+			// with Maven 3.6.2 this field might not be filled
+			result.repositorySession = mavenSession.repositorySession
+		}
+		if (createNew) {
+			result = new DefaultProjectBuildingRequest(result)
+		}
+		return result
 	}
 
 	/**
@@ -466,13 +482,14 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		this.mavenSession = mavenSession
 
-		this.remoteRepositories = mavenSession.request.remoteRepositories
+		this.remoteRepositories = new ArrayList(mavenSession.request.remoteRepositories)
 		this.localRepository = mavenSession.request.localRepository
 
 		// get the activate profiles from settings according to activation rules now
+		ProjectBuildingRequest projectBuildingRequest = getProjectBuildingRequest(false)
 		DefaultProfileActivationContext context = new DefaultProfileActivationContext()
-		context.activeProfileIds = mavenSession.request.projectBuildingRequest.activeProfileIds
-		context.inactiveProfileIds = mavenSession.request.projectBuildingRequest.inactiveProfileIds
+		context.activeProfileIds = projectBuildingRequest.activeProfileIds
+		context.inactiveProfileIds = projectBuildingRequest.inactiveProfileIds
 		context.systemProperties = mavenSession.request.systemProperties
 		context.userProperties = mavenSession.request.userProperties
 		context.projectDirectory = mavenSession.request.pom ? mavenSession.request.pom.parentFile : (File) null
@@ -486,7 +503,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				}
 			})
 		for (Profile profile : activeExternalProfiles) {
-			if (!mavenSession.request.projectBuildingRequest.activeProfileIds.contains(profile.id)) {
+			if (!projectBuildingRequest.activeProfileIds.contains(profile.id)) {
 				logger.info("Activating profile from settings: " + profile.id)
 				for (Repository remoteRepository : profile.repositories)
 				{
@@ -615,11 +632,12 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			// Maven 3.2.5 doesn't let you have access to this (package private), 3.3.x does
 			def modelBuildingListenerConstructor = Class.forName("org.apache.maven.project.DefaultModelBuildingListener").declaredConstructors[0]
 		modelBuildingListenerConstructor.accessible = true
+		ProjectBuildingRequest projectBuildingRequest = getProjectBuildingRequest(false)
 		ModelBuildingListener modelBuildingListener = modelBuildingListenerConstructor.newInstance(project,
-				projectBuildingHelper, mavenSession.request.projectBuildingRequest)
+				projectBuildingHelper, projectBuildingRequest)
 
 		// new org.apache.maven.project.PublicDefaultModelBuildingListener( project,
-		//projectBuildingHelper, mavenSession.request.projectBuildingRequest )
+		//projectBuildingHelper, projectBuildingRequest )
 		// this allows us to know when the ModelProcessor is called that we should inject the tiles into the
 		// parent structure
 		ModelSource2 mainArtifactModelSource = new CachingModelSource(project.artifact, project.file)
@@ -627,9 +645,9 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		ModelBuildingRequest request = new DefaultModelBuildingRequest(modelSource: mainArtifactModelSource,
 				pomFile: project.file, modelResolver: createModelResolver(), modelCache: modelCache,
 				systemProperties: mavenSession.request.systemProperties, userProperties: mavenSession.request.userProperties,
-				profiles: mavenSession.request.projectBuildingRequest.profiles,
-				activeProfileIds: mavenSession.request.projectBuildingRequest.activeProfileIds,
-				inactiveProfileIds: mavenSession.request.projectBuildingRequest.inactiveProfileIds,
+				profiles: projectBuildingRequest.profiles,
+				activeProfileIds: projectBuildingRequest.activeProfileIds,
+				inactiveProfileIds: projectBuildingRequest.inactiveProfileIds,
 				modelBuildingListener: modelBuildingListener,
 				locationTracking: true, twoPhaseBuilding: true, processPlugins: true)
 
