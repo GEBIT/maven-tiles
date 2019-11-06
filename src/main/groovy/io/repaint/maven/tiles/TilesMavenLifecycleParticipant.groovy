@@ -279,6 +279,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			if (tileArtifact.version.startsWith('$') && project) {
 				// get version from project properties
 				StringSearchInterpolator interpolator = new StringSearchInterpolator()
+				interpolator.addValueSource(new PropertiesBasedValueSource(mavenSession.userProperties))
 				interpolator.addValueSource(new PropertiesBasedValueSource(project.properties))
 				tileArtifact.version = interpolator.interpolate(tileArtifact.version)
 				logger.debug("Interpolated tile ${GavUtil.artifactGav(tileArtifact)} version as ${tileArtifact.version}")
@@ -454,7 +455,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				}
 			}
 		}
-
 
 		return isolator
 	}
@@ -925,6 +925,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			// original parent version might need to be interpolated
 			if (originalParent?.version?.contains("\$")) {
 				StringSearchInterpolator interpolator = new StringSearchInterpolator()
+				interpolator.addValueSource(new PropertiesBasedValueSource(mavenSession.userProperties))
 				interpolator.addValueSource(new PropertiesBasedValueSource(project.properties))
 				originalParent.version = interpolator.interpolate(originalParent.version)
 			}
