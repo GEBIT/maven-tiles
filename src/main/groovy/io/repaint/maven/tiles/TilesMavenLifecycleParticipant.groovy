@@ -1240,6 +1240,12 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		Artifact unprocessedTile = turnPropertyIntoUnprocessedTile(tileDependencyName, project, pomFile)
 		TileData tileData = getTileData(mavenSession)
 		String depName = artifactName(unprocessedTile)
+		
+		if (removeFlag) { 
+			if (!tileData.ignoredTiles.contains(tileDependencyName)) {
+				tileData.ignoredTiles.add(tileDependencyName)
+			}
+		}
 
 		if (!tileData.processedTiles.containsKey(depName)) {
 			if (tileData.unprocessedTiles.containsKey(depName)) {
@@ -1250,14 +1256,17 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				} else if (!reuseFlag) {
 					logger.warn(String.format("tiles-maven-plugin in project %s requested for same tile dependency %s",
 							modelGav(model), artifactGav(unprocessedTile)))
+				} else {
+					logger.debug("Ignoring tile ${artifactGav(unprocessedTile)} in project ${modelGav(model)} because it is already added")
 				}
 			} else if (!removeFlag) {
-				logger.debug("Adding tile ${artifactGav(unprocessedTile)}")
-
-				tileData.unprocessedTiles.put(depName, unprocessedTile)
-				tileData.tileDiscoveryOrder.add(depName)
-			} else {
-				logger.debug("Ignoring tile ${artifactGav(unprocessedTile)} in project ${modelGav(model)} because it is already added")
+				if (tileData.ignoredTiles.contains(tileDependencyName)) {
+					logger.debug("Removing tile ${artifactGav(unprocessedTile)}")
+				} else {
+					logger.debug("Adding tile ${artifactGav(unprocessedTile)}")
+					tileData.unprocessedTiles.put(depName, unprocessedTile)
+					tileData.tileDiscoveryOrder.add(depName)
+				}
 			}
 		} else if (!reuseFlag) {
 			logger.warn(String.format("tiles-maven-plugin in project %s requested for same tile dependency %s",

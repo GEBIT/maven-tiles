@@ -14,4 +14,5 @@ class TileData {
 	Map<String, ArtifactModel> processedTiles = [:].asSynchronized()
 	List<String> tileDiscoveryOrder = [].asSynchronized()
 	Map<String, Artifact> unprocessedTiles = [:].asSynchronized()
+	List<String> ignoredTiles = [].asSynchronized()
 }
