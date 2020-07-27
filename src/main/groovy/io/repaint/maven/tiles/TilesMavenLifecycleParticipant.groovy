@@ -958,7 +958,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 								if (merged.containsKey( key )) {
 									mergeProfile( merged[key], element, sourceDominant, context) 
 								} else {
-									merged.put( key, element );
+									merged.put( key, element.clone() );
 								}
 							}
 
