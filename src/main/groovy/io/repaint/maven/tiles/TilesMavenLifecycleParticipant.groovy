@@ -37,6 +37,10 @@ import org.apache.maven.artifact.resolver.ArtifactResolutionException
 import org.apache.maven.artifact.resolver.ArtifactResolver
 import org.apache.maven.artifact.versioning.VersionRange
 import org.apache.maven.execution.MavenSession
+import org.apache.maven.model.Activation
+import org.apache.maven.model.ActivationFile
+import org.apache.maven.model.ActivationOS
+import org.apache.maven.model.ActivationProperty
 import org.apache.maven.model.Build
 import org.apache.maven.model.Dependency
 import org.apache.maven.model.DistributionManagement
@@ -99,7 +103,9 @@ import org.xml.sax.SAXParseException
 
 import groovy.transform.CompileStatic
 import groovy.transform.TypeCheckingMode
+import io.repaint.maven.tiles.TilesMavenLifecycleParticipant.ArtifactModel
 import io.repaint.maven.tiles.TilesMavenLifecycleParticipant.CachingModelSource
+import io.repaint.maven.tiles.TilesMavenLifecycleParticipant.TilesProjectModelResolver
 import io.repaint.maven.tiles.isolators.AetherIsolator
 import io.repaint.maven.tiles.isolators.Maven30Isolator
 import io.repaint.maven.tiles.isolators.Maven35Isolator
@@ -685,7 +691,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 				} else {
 					model = modelProcessor.read(input, options)
 				}
-
 				use(GavUtil) {
 					if (model.artifactId == project.artifactId
 					&& model.realGroupId == project.groupId
@@ -722,7 +727,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 							return (model.artifactId == tileModel.artifactId && model.realGroupId == tileModel.realGroupId &&
 									model.realVersion == tileModel.realVersion)
 						}
-
 						if (oneOfUs) {
 							model = oneOfUs.model
 						}
@@ -737,7 +741,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 								org.apache.maven.model.building.ModelCacheTag.RAW.getName(), null)
 					}
 				}
-
 				return model
 			}
 		}
@@ -768,16 +771,16 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		@Override
 		public void addRepository( final Repository repository, boolean replace )
 			throws InvalidRepositoryException {
-				if (replace) {
-					effectiveRemoteRepositories.removeIf({ it.id == repository.id })
-				} else {
-					if (effectiveRemoteRepositories.stream().anyMatch({ it.id == repository.id })) {
-						return
-					}
+			if (replace) {
+				effectiveRemoteRepositories.removeIf({ it.id == repository.id })
+			} else {
+				if (effectiveRemoteRepositories.stream().anyMatch({ it.id == repository.id })) {
+					return
 				}
-				ArtifactRepository repo = repositorySystem.buildArtifactRepository( repository )
-				repositorySystem.injectAuthentication(mavenSession.repositorySession, Collections.singletonList(repo))
-				effectiveRemoteRepositories.add(repo)
+			}
+			ArtifactRepository repo = repositorySystem.buildArtifactRepository( repository )
+			repositorySystem.injectAuthentication(mavenSession.repositorySession, Collections.singletonList(repo))
+			effectiveRemoteRepositories.add(repo)
 		}
 
 		@Override
@@ -852,7 +855,13 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 	protected void putTileModelInCache(TileModel model) {
 		if (modelCache) {
-			modelCache.putOriginal(model.model.groupId, model.model.artifactId, model.model.version, "tile", [model.tilePom, model.model, model.tiles, model.fragmentNames, model.fragmentModel])
+			modelCache.putOriginal(model.model.groupId, model.model.artifactId, model.model.version, "tile", [
+				model.tilePom,
+				model.model,
+				model.tiles,
+				model.fragmentNames,
+				model.fragmentModel
+			])
 		}
 	}
 
@@ -936,6 +945,16 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			if (combinedTilesModel == null) {
 				def profileMerger = new org.apache.maven.model.profile.DefaultProfileInjector.ProfileModelMerger();
 				def merger = new DefaultInheritanceAssembler.InheritanceModelMerger() {
+					private Model currentTarget;
+					private Model currentSource;
+
+					@Override
+					public void merge(Model target, Model source, boolean sourceDominant, Map<?, ?> hints) {
+						this.currentTarget = target;
+						this.currentSource = source;
+						super.merge(target, source, sourceDominant, hints);
+					}
+
 					@Override
 					protected void mergeModel_Profiles( Model target, Model source, boolean sourceDominant,
 							Map<Object, Object> context )
@@ -956,7 +975,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 							{
 								Object key = getProfileKey( element );
 								if (merged.containsKey( key )) {
-									mergeProfile( merged[key], element, sourceDominant, context) 
+									mergeProfile( merged[key], element, sourceDominant, context)
 								} else {
 									merged.put( key, element.clone() );
 								}
@@ -986,8 +1005,40 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 							if ( target.getActivation() == null ) {
 								target.setActivation( source.getActivation().clone() );
 							} else {
+								validateSimilarActivation(source, target);
+								// mergeActivation implementation is empty, see GBLD-1035
 								profileMerger.mergeActivation(target.getActivation(), source.getActivation(), false, context );
 							}
+						}
+					}
+
+					private void validateSimilarActivation(Profile firstProfile, Profile secondProfile) {
+						Activation first = firstProfile.getActivation();
+						Activation second = secondProfile.getActivation();
+
+						String locationKey = ""; // see MavenXpp3Reader.parseActivation()
+
+						// it may be ok if activeByDefault is different, so we skip this comparison
+						String detailMessage = null;
+						if (!isSimilarActivationProperty(first.getProperty(), second.getProperty())) {
+							detailMessage = String.format("  Activation Property 1: %s\n  Activation Property 2: %s", first.getProperty()?.getName(), second.getProperty()?.getName());
+						}
+						else if (!isSimilarActivationFile(first.getFile(), second.getFile())) {
+							detailMessage = String.format("  Activation File 1: %s\n  Activation File 2: %s", first.getFile()?.getMissing(), second.getFile()?.getMissing());
+						}
+						else if (!isSimilarActivationOS(first.getOs(), second.getOs())) {
+							detailMessage = String.format("  Activation OS 1: %s\n  Activation OS 2: %s", toString(first.getOs()), toString(second.getOs()));
+						}
+						else if (!isSimilarActivationJdk(first.getJdk(), second.getJdk())) {
+							detailMessage = String.format("  Activation JDK 1: %s\n  Activation JDK 2: %s", first.getJdk(), second.getJdk());
+						}
+						if (detailMessage != null) {
+							String errorMessage = String.format("Problem merging multiple profiles with id '%s'.\nThey have different activations and only one activation will be used. Make the activations the same or choose different profile ids.\nDetails:\n%s\n%s\n%s",
+									firstProfile.getId(),
+									detailMessage,
+									"target: ${modelGav(currentTarget)}",
+									"source: ${modelGav(currentSource)}");
+							throw new MavenExecutionException(errorMessage, lastPomFile);
 						}
 					}
 				}
@@ -1032,6 +1083,88 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 			logger.debug("")
 		}
+	}
+
+	private toString(ActivationOS os) {
+		return String.format("name: '%s', family: '%s', arch: '%s', version: '%s'", os.getName(), os.getFamily(), os.getArch(), os.getVersion());
+	}
+
+	private boolean nullDifferent(Object first, Object second) {
+		return Objects.isNull(first) != Objects.isNull(second);
+	}
+
+	private boolean bothNull(Object first, Object second) {
+		return first == null && second == null;
+	}
+
+	/**
+	 * Returns <code>true</code> if either both properties are <code>null</code>
+	 * or the name and value of both properties are equal.
+	 */
+	private boolean isSimilarActivationProperty(ActivationProperty first, ActivationProperty second) {
+		if (bothNull(first, second)) {
+			return true;
+		}
+		if (nullDifferent(first, second)) {
+			return false;
+		}
+		if (!Objects.equals(first.getName(), second.getName())) {
+			return false;
+		}
+		if (!Objects.equals(first.getValue(), second.getValue())) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Returns <code>true</code> if either both files are <code>null</code> or
+	 * both refer to the same file.
+	 */
+	private boolean isSimilarActivationFile(ActivationFile first, ActivationFile second) {
+		if (bothNull(first, second)) {
+			return true;
+		}
+		if (nullDifferent(first, second)) {
+			return false;
+		}
+		if (!Objects.equals(first.getMissing(), second.getMissing())) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Returns <code>true</code> if either both are <code>null</code> or both
+	 * specify the same values of name, arch, family and version.
+	 */
+	private boolean isSimilarActivationOS(ActivationOS first, ActivationOS second) {
+		if (bothNull(first, second)) {
+			return true;
+		}
+		if (nullDifferent(first, second)) {
+			return false;
+		}
+		if (!Objects.equals(first.getName(), second.getName())) {
+			return false;
+		}
+		if (!Objects.equals(first.getArch(), second.getArch())) {
+			return false;
+		}
+		if (!Objects.equals(first.getFamily(), second.getFamily())) {
+			return false;
+		}
+		if (!Objects.equals(first.getVersion(), second.getVersion())) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Returns <code>true</code> if both specify the same JDK
+	 */
+	private boolean isSimilarActivationJdk(String first, String second) {
+		return Objects.equals(first, second);
 	}
 
 	@CompileStatic(TypeCheckingMode.SKIP)
@@ -1096,7 +1229,10 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			// re-resolving project artifacts needs to be done by invoking a private method
 			DefaultProjectBuilder defaultProjectBuilder = (DefaultProjectBuilder) projectBuilder
 			def resolveDependenciesMethod = DefaultProjectBuilder.class.getDeclaredMethod("resolveDependencies",
-				(Class[]) [MavenProject.class, RepositorySystemSession.class])
+				(Class[]) [
+					MavenProject.class,
+					RepositorySystemSession.class
+				])
 			resolveDependenciesMethod.accessible = true
 			resolveDependenciesMethod.invoke(projectBuilder, project, mavenSession.getRepositorySession())
 		}
@@ -1240,8 +1376,8 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		Artifact unprocessedTile = turnPropertyIntoUnprocessedTile(tileDependencyName, project, pomFile)
 		TileData tileData = getTileData(mavenSession)
 		String depName = artifactName(unprocessedTile)
-		
-		if (removeFlag) { 
+
+		if (removeFlag) {
 			if (!tileData.ignoredTiles.contains(tileDependencyName)) {
 				tileData.ignoredTiles.add(tileDependencyName)
 			}
