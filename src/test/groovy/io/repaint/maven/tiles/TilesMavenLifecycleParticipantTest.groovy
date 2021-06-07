@@ -318,6 +318,143 @@ public class TilesMavenLifecycleParticipantTest {
 	}
 
 	@Test
+	public void testMergeProfilesFileGood() {
+		// two tiles with the same profile with the same activation is OK
+		TileModel tile1 = new TileModel(new File('src/test/resources/mergeprofiles/activation-file-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-file-tile1:1', null, null))
+				
+		TileModel tile2 = new TileModel(new File('src/test/resources/mergeprofiles/activation-file-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-file-tile2:1', null, null))
+		
+		performMergeProfiles(tile1, tile2)
+	}
+	
+	@Test
+	public void testMergeProfilesFileBad() {
+		// two tiles with the same profile but with different activations is NOT OK
+		TileModel tile1 = new TileModel(new File('src/test/resources/mergeprofiles/activation-file-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-file-tile1:1', null, null))
+				
+		TileModel tile2 = new TileModel(new File('src/test/resources/mergeprofiles/activation-file-tile2.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-file-tile2:1', null, null))
+				
+		Throwable failure = shouldFail(MavenExecutionException) {
+			performMergeProfiles(tile1, tile2)
+		}
+		assert failure.message.contains("Activation File 1: file2")
+		assert failure.message.contains("Activation File 2: file1")
+	}
+	
+	@Test
+	public void testMergeProfilesPropertyGood() {
+		// two tiles with the same profile with the same activation is OK
+		TileModel tile1 = new TileModel(new File('src/test/resources/mergeprofiles/activation-property-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-property-tile1:1', null, null))
+				
+		TileModel tile2 = new TileModel(new File('src/test/resources/mergeprofiles/activation-property-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-property-tile2:1', null, null))
+				
+		performMergeProfiles(tile1, tile2)
+	}
+	
+	@Test
+	public void testMergeProfilesPropertyBad() {
+		// two tiles with the same profile but with different activations is NOT OK
+		TileModel tile1 = new TileModel(new File('src/test/resources/mergeprofiles/activation-property-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-property-tile1:1', null, null))
+				
+		TileModel tile2 = new TileModel(new File('src/test/resources/mergeprofiles/activation-property-tile2.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-property-tile2:1', null, null))
+				
+		Throwable failure = shouldFail(MavenExecutionException) {
+			performMergeProfiles(tile1, tile2)
+		}
+		assert failure.message.contains("Activation Property 1: property2")
+		assert failure.message.contains("Activation Property 2: property1")
+	}
+	
+	@Test
+	public void testMergeProfilesJdkGood() {
+		// two tiles with the same profile with the same activation is OK
+		TileModel tile1 = new TileModel(new File('src/test/resources/mergeprofiles/activation-jdk-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-jdk-tile1:1', null, null))
+				
+		TileModel tile2 = new TileModel(new File('src/test/resources/mergeprofiles/activation-jdk-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-jdk-tile2:1', null, null))
+				
+		performMergeProfiles(tile1, tile2)
+	}
+	
+	@Test
+	public void testMergeProfilesJdkBad() {
+		// two tiles with the same profile but with different activations is NOT OK
+		TileModel tile1 = new TileModel(new File('src/test/resources/mergeprofiles/activation-jdk-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-jdk-tile1:1', null, null))
+				
+		TileModel tile2 = new TileModel(new File('src/test/resources/mergeprofiles/activation-jdk-tile2.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-jdk-tile2:1', null, null))
+				
+		Throwable failure = shouldFail(MavenExecutionException) {
+			performMergeProfiles(tile1, tile2)
+		}
+		assert failure.message.contains("Activation JDK 1: [1.1,1.6)")
+		assert failure.message.contains("Activation JDK 2: [1.8,1.11)")
+	}
+	
+	
+	@Test
+	public void testMergeProfilesOSGood() {
+		// two tiles with the same profile with the same activation is OK
+		TileModel tile1 = new TileModel(new File('src/test/resources/mergeprofiles/activation-os-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-os-tile1:1', null, null))
+				
+		TileModel tile2 = new TileModel(new File('src/test/resources/mergeprofiles/activation-os-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-os-tile2:1', null, null))
+				
+		performMergeProfiles(tile1, tile2)
+	}
+	
+	@Test
+	public void testMergeProfilesOSBad() {
+		// two tiles with the same profile but with different activations is NOT OK
+		TileModel tile1 = new TileModel(new File('src/test/resources/mergeprofiles/activation-os-tile1.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-os-tile1:1', null, null))
+				
+		TileModel tile2 = new TileModel(new File('src/test/resources/mergeprofiles/activation-os-tile2.xml'),
+				participant.turnPropertyIntoUnprocessedTile('io.repaint.tiles:activation-os-tile2:1', null, null))
+				
+		Throwable failure = shouldFail(MavenExecutionException) {
+			performMergeProfiles(tile1, tile2)
+		}
+		assert failure.message.contains("Activation OS 1: name: 'Windows 10', family: 'Windows', arch: 'x86', version: 'null'")
+		assert failure.message.contains("Activation OS 2: name: 'Windows 8.1', family: 'Windows', arch: 'x86_64', version: '5.1.2600'")
+	}
+	
+	private void performMergeProfiles(TileModel... tileModels) {
+		List<TileModel> tiles = Arrays.asList(tileModels);
+				                        		 
+		File pomFile = new File('src/test/resources/empty-pom.xml')
+		Model pomModel = readModel(pomFile)
+		 
+		Map<String, Model> modelCache = new HashMap<>()
+		participant = new TilesMavenLifecycleParticipant() {
+			@Override
+			protected void putModelInCache(ModelBuilder modelBuilder, Model model, ModelBuildingRequest request, File pFile) {
+			}
+			@Override
+			protected void putOriginalModelInCache(String groupId, String artifactId, String version, Model model, File pFile) {
+				modelCache.put(groupId + ':' + artifactId, model)
+			}
+		}
+		
+		stuffParticipant()
+
+		participant.injectTilesIntoParentStructure(null,
+					[getGroupId: { pomModel.groupId }, getArtifactId: { pomModel.artifactId }, getProperties: { new Properties() } ] as MavenProject,
+					tiles, pomModel, [getPomFile: { return pomFile } ] as ModelBuildingRequest)
+	}
+	
+	@Test
 	public void testNoTiles() throws MavenExecutionException {
 		participant = new TilesMavenLifecycleParticipant() {
 					@Override
@@ -363,15 +500,15 @@ public class TilesMavenLifecycleParticipantTest {
 		}
 	}
 
-	protected resetParticipantToLoadTilesFromDisk() {
+	protected resetParticipantToLoadTilesFromDisk(String folder = "src/test/resources") {
 		participant = new TilesMavenLifecycleParticipant() {
 					@Override
-					protected void thunkModelBuilder(MavenSession mavenSession, MavenProject project1) {
+					protected void thunkModelBuilder(MavenSession mavenSession, MavenProject project) {
 					}
 
 					@Override
 					protected Artifact resolveTile(MavenSession mavenSession, MavenProject project,  Artifact tileArtifact) throws MavenExecutionException {
-						tileArtifact.file = new File("src/test/resources/${tileArtifact.artifactId}.xml")
+						tileArtifact.file = new File(folder + "/" + "${tileArtifact.artifactId}.xml")
 
 						return tileArtifact
 					}
@@ -404,7 +541,7 @@ public class TilesMavenLifecycleParticipantTest {
 		MavenProject project = fakeProjectFromFile("full-tile-load-pom")
 		MavenSession session = fakeSessionForProject(project)
 		resetParticipantToLoadTilesFromDisk()
-
+		
 		participant.orchestrateMerge(session, project)
 
 		assert TilesMavenLifecycleParticipant.getTileData(session).processedTiles.size() == 4
@@ -416,7 +553,7 @@ public class TilesMavenLifecycleParticipantTest {
 		MavenSession session = fakeSessionForProject(project)
 
 		resetParticipantToLoadTilesFromDisk()
-
+		
 		participant.orchestrateMerge(session, project)
 		assert TilesMavenLifecycleParticipant.getTileData(session).processedTiles.size() == 4
 	}

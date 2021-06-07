@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<profiles>
+		<profile>
+			<id>by-os</id>
+			<activation>
+				<os>
+					<name>Windows 10</name>
+					<family>Windows</family>
+					<arch>x86</arch>
+				</os>
+			</activation>
+		</profile>
+	</profiles>
+</project>

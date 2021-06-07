@@ -632,7 +632,6 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	protected void thunkModelBuilder(MavenSession mavenSession, MavenProject project) {
 		TileData tileData = getTileData(mavenSession)
 		List<TileModel> tiles = tileData.processedTiles.values().collect({it.tileModel})
-
 		if (!tiles) return
 
 			// Maven 3.2.5 doesn't let you have access to this (package private), 3.3.x does
@@ -659,7 +658,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 
 		boolean tilesInjected = false
 		boolean tilesMerged = false
-
+		
 		final DefaultModelBuilder modelBuilder = new DefaultModelBuilderFactory().newInstance()
 		modelBuilder.setLifecycleBindingsInjector(lifecycleBindingsInjector)
 		ModelProcessor delegateModelProcessor = new ModelProcessor() {
