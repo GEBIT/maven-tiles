@@ -546,7 +546,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 							//the previously specified parent is not in the hierarchy
 							for (MavenProject checkParent = currentProject.parent; checkParent != null; checkParent = checkParent.parent) {
 								if (parentsAppliedWithTiles.contains(modelGa(checkParent.model))) {
-									throw new MavenExecutionException("<applyBefore>${modelGa(checkParent.model)}</applyBefore> has already been used in another module and it's a parent of this module, too, so you also need to use it for this module.", currentProject.getFile())
+									throw new MavenExecutionException("<applyBefore>${modelGa(checkParent.model)}</applyBefore> has already been used in another module and its a parent of this module, too, so you also need to use it for this module.", currentProject.getFile())
 								}
 							}
 						}
@@ -918,7 +918,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 		File lastPomFile = request.pomFile
 		if (tiles) {
 			logger.info("--- tiles-maven-plugin: Injecting ${tiles.size()} tiles as intermediary parent artifacts for ${project.groupId}:${project.artifactId}...")
-			logger.debug("Mixed '${modelGav(pomModel)}' with tile '${modelGav(tiles.first().model)}' as it's new parent.")
+			logger.debug("Mixed '${modelGav(pomModel)}' with tile '${modelGav(tiles.first().model)}' as its new parent.")
 
 			// if there is a parent make sure the inherited groupId / version is correct
 			if (!pomModel.groupId) {
