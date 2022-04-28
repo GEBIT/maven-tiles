@@ -43,6 +43,7 @@ import org.apache.maven.model.ActivationOS
 import org.apache.maven.model.ActivationProperty
 import org.apache.maven.model.Build
 import org.apache.maven.model.Dependency
+import org.apache.maven.model.DeploymentRepository
 import org.apache.maven.model.DistributionManagement
 import org.apache.maven.model.Exclusion
 import org.apache.maven.model.InputLocation
@@ -95,6 +96,7 @@ import org.codehaus.plexus.component.annotations.Requirement
 import org.codehaus.plexus.interpolation.PropertiesBasedValueSource
 import org.codehaus.plexus.interpolation.StringSearchInterpolator
 import org.codehaus.plexus.logging.Logger
+import org.codehaus.plexus.util.StringUtils
 import org.codehaus.plexus.util.xml.Xpp3Dom
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException
 import org.eclipse.aether.RepositoryCache
@@ -555,9 +557,7 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 						}
 
 						// did we expect but not get a distribution artifact repository?
-						if (!currentProject.distributionManagementArtifactRepository) {
-							discoverAndSetDistributionManagementArtifactoryRepositoriesIfTheyExist(currentProject)
-						}
+						discoverAndSetDistributionManagementArtifactoryRepositoriesIfTheyExist(currentProject)
 
 					} finally {
 						// restore previous tile data
@@ -576,21 +576,71 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 	 */
 	void discoverAndSetDistributionManagementArtifactoryRepositoriesIfTheyExist(MavenProject project) {
 		DistributionManagement distributionManagement = project.model.distributionManagement
-
 		if (distributionManagement) {
-			if (distributionManagement.repository) {
-				project.setReleaseArtifactRepository(repositoryFactory.createDeploymentArtifactRepository(
-						distributionManagement.repository.id, distributionManagement.repository.url,
-						repositoryLayouts.get( distributionManagement.repository.layout ?: 'default' ), true ))
+			boolean updateSnapshotRepo = false
+			boolean updateReleaseRepo = false
+			ArtifactRepository artifactRepository = project.distributionManagementArtifactRepository
+			if (!artifactRepository) {
+				if (distributionManagement.snapshotRepository) {
+					updateSnapshotRepo = true
+				}
+				if (distributionManagement.repository) {
+					updateReleaseRepo = true
+				}
+			} else if (project.getArtifact().isSnapshot()) {
+				if (distributionManagement.snapshotRepository) {
+					if (artifactRepository.id != distributionManagement.snapshotRepository.id ||
+							artifactRepository.url != distributionManagement.snapshotRepository.url) {
+						updateSnapshotRepo = true
+					}
+				} else if (distributionManagement.repository) {
+					if (artifactRepository.id != distributionManagement.repository.id ||
+							artifactRepository.url != distributionManagement.repository.url) {
+						updateReleaseRepo = true
+					}
+				}
+			} else {
+				if (distributionManagement.repository) {
+					if (artifactRepository.id != distributionManagement.repository.id ||
+							artifactRepository.url != distributionManagement.repository.url) {
+						updateReleaseRepo = true
+					}
+				}
 			}
-			if (distributionManagement.snapshotRepository) {
-				project.setSnapshotArtifactRepository(repositoryFactory.createDeploymentArtifactRepository(
-						distributionManagement.snapshotRepository.id, distributionManagement.snapshotRepository.url,
-						repositoryLayouts.get( distributionManagement.snapshotRepository.layout ?: 'default' ), true ))
+			// release artifact repository
+			if (updateReleaseRepo) {
+				try {
+					DeploymentRepository r = distributionManagement.repository
+					if (r.id && r.url) {
+						ArtifactRepository repo = repositorySystem.buildArtifactRepository(r)
+						repositorySystem.injectProxy(mavenSession.getRepositorySession(), Arrays.asList(repo))
+						repositorySystem.injectAuthentication(mavenSession.getRepositorySession(), Arrays.asList(repo))
+						project.setReleaseArtifactRepository(repo)
+					}
+				} catch ( InvalidRepositoryException e ) {
+					throw new IllegalStateException("Failed to create release distribution repository for "
+						+ project.getId(), e);
+				}
+			}
+			// snapshot artifact repository
+			if (updateSnapshotRepo) {
+				try {
+					DeploymentRepository r = distributionManagement.snapshotRepository
+					if (r.id && r.url) {
+						ArtifactRepository repo = repositorySystem.buildArtifactRepository(r);
+						repositorySystem.injectProxy(mavenSession.getRepositorySession(), Arrays.asList(repo));
+						repositorySystem.injectAuthentication(mavenSession.getRepositorySession(), Arrays.asList(repo));
+						project.setSnapshotArtifactRepository(repo);
+					}
+				}
+				catch ( InvalidRepositoryException e ) {
+					throw new IllegalStateException("Failed to create snapshot distribution repository for "
+						+ project.getId(), e);
+				}
 			}
 		}
 	}
-
+	
 	/**
 	 * Merges the files over the top of the project, and then the individual project back over the top.
 	 * The reason for this is that the super pom and packaging can set plugin versions. This allows the tiles
