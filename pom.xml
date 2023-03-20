@@ -48,6 +48,12 @@
   </developers>
 
   <properties>
+    <!-- GEBIT: versions to be used for gebit-build support -->
+    <version.tiles>2.8-gebit37</version.tiles>
+    <version.gebit-build-extension>1.2.2</version.gebit-build-extension>
+    <version.gebit-forked>1.0.2</version.gebit-forked>
+    <!-- GEBIT: end -->
+
     <mavenVersion>3.6.3</mavenVersion>
     <groovyVersion>3.0.9</groovyVersion>
     <repaint.release>dev</repaint.release>
@@ -203,7 +209,31 @@
   </profiles>
 
   <build>
+    <!-- GEBIT: Extensions -->
+    <extensions>
+        <extension>
+            <groupId>de.gebit.build.maven</groupId>
+            <artifactId>gebit-build-extension</artifactId>
+            <version>${version.gebit-build-extension}</version>
+        </extension>
+    </extensions>
+    <!-- GEBIT: end -->
+
     <plugins>
+      <!-- GEBIT: Tiles -->
+      <plugin>
+        <groupId>io.repaint.maven</groupId>
+        <artifactId>tiles-maven-plugin</artifactId>
+        <version>${version.tiles}</version>
+        <extensions>true</extensions>
+        <configuration>
+            <tiles>
+                <tile>de.gebit.build.forked.tile:maven-plugin:${version.gebit-forked}</tile>
+            </tiles>
+        </configuration>
+      </plugin>
+      <!-- GEBIT: end -->
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-scm-plugin</artifactId>
