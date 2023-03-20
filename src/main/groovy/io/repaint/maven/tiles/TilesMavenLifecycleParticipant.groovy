@@ -50,6 +50,7 @@ import org.apache.maven.model.InputLocation
 import org.apache.maven.model.Model
 import org.apache.maven.model.Parent
 import org.apache.maven.model.Plugin
+import org.apache.maven.model.PluginContainer
 import org.apache.maven.model.PluginManagement
 import org.apache.maven.model.Profile;
 import org.apache.maven.model.ReportPlugin
@@ -996,7 +997,52 @@ public class TilesMavenLifecycleParticipant extends AbstractMavenLifecyclePartic
 			def tilesId = tiles.collect { tile -> tile.model.groupId + "_" + tile.model.artifactId + "_" + tile.model.version}.join("_")
 			Model combinedTilesModel = getOriginalModelFromCache("tile", tilesId, "1")
 			if (combinedTilesModel == null) {
-				def profileMerger = new org.apache.maven.model.profile.DefaultProfileInjector.ProfileModelMerger();
+				def profileMerger = new org.apache.maven.model.profile.DefaultProfileInjector.ProfileModelMerger() {
+					@Override
+					protected void mergePluginContainer_Plugins( PluginContainer target, PluginContainer source,
+							boolean sourceDominant, Map<Object, Object> context ) {
+						List<Plugin> src = source.getPlugins();
+						if ( !src.isEmpty() ) {
+							List<Plugin> tgt = target.getPlugins();
+							Map<Object, Plugin> master = new LinkedHashMap<>( tgt.size() * 2 );
+
+							for ( Plugin element : tgt ) {
+								Object key = getPluginKey( element );
+								master.put( key, element );
+							}
+
+							Map<Object, List<Plugin>> predecessors = new LinkedHashMap<>();
+							List<Plugin> pending = new ArrayList<>();
+							for ( Plugin element : src ) {
+								Object key = getPluginKey( element );
+								Plugin existing = master.get( key );
+								if ( existing != null ) {
+									mergePlugin( existing, element, sourceDominant, context );
+
+									if ( !pending.isEmpty() ) {
+										predecessors.put( key, pending );
+										pending = new ArrayList<>();
+									}
+								}
+								else {
+									pending.add( element.clone() );
+								}
+							}
+
+							List<Plugin> result = new ArrayList<>( src.size() + tgt.size() );
+							for ( Map.Entry<Object, Plugin> entry : master.entrySet() ) {
+								List<Plugin> pre = predecessors.get( entry.getKey() );
+								if ( pre != null ) {
+									result.addAll( pre );
+								}
+								result.add( entry.getValue() );
+							}
+							result.addAll( pending );
+
+							target.setPlugins( result );
+						}
+					}
+				};
 				def merger = new DefaultInheritanceAssembler.InheritanceModelMerger() {
 					private Model currentTarget;
 					private Model currentSource;
