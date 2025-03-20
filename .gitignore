@@ -4,6 +4,7 @@
 
 # Ignore target directory
 target
+eclipse-target
 
 # Don't ignore git special files
 !.gitignore
