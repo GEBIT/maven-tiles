@@ -31,6 +31,9 @@ abstract class AbstractTileMojo extends AbstractMojo {
 	@Parameter(property = "applyBefore", readonly = false, required = false)
 	String applyBefore;
 
+	@Parameter(property = "mergeTarget", readonly = false, required = false)
+	String mergeTarget;
+
 	@Parameter(property = "buildSmells", readonly = false, required = false)
 	String buildSmells
 
