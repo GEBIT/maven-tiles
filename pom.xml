@@ -50,12 +50,13 @@
   <properties>
     <!-- GEBIT: versions to be used for gebit-build support -->
     <version.tiles>2.8-gebit37</version.tiles>
-    <version.gebit-build-extension>1.2.2</version.gebit-build-extension>
-    <version.gebit-forked>1.0.2</version.gebit-forked>
+    <version.gebit-build-extension>2.0.0</version.gebit-build-extension>
+    <version.build>3.15.0</version.build>
+    <version.gebit-forked>1.0.8</version.gebit-forked>
     <!-- GEBIT: end -->
 
-    <mavenVersion>3.6.3</mavenVersion>
-    <groovyVersion>3.0.9</groovyVersion>
+    <mavenVersion>3.9.11</mavenVersion>
+    <groovyVersion>4.0.31</groovyVersion>
     <repaint.release>dev</repaint.release>
   </properties>
 
@@ -81,17 +82,17 @@
 
   <dependencies>
     <dependency>
-      <groupId>org.codehaus.groovy</groupId>
+      <groupId>org.apache.groovy</groupId>
       <artifactId>groovy</artifactId>
       <version>${groovyVersion}</version>
     </dependency>
     <dependency>
-    <groupId>org.codehaus.groovy</groupId>
+    <groupId>org.apache.groovy</groupId>
       <artifactId>groovy-xml</artifactId>
       <version>${groovyVersion}</version>
     </dependency>
     <dependency>
-    <groupId>org.codehaus.groovy</groupId>
+    <groupId>org.apache.groovy</groupId>
       <artifactId>groovy-test</artifactId>
       <version>${groovyVersion}</version>
       <scope>test</scope>
@@ -243,12 +244,12 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
-        <version>3.0.0</version>
+        <version>3.6.2</version>
         <!-- Invocation is defined by the release plugin goal set hence no executions -->
         <configuration>
           <rules>
             <requireMavenVersion>
-              <version>[3.5.3,)</version>
+              <version>[3.9.9,)</version>
             </requireMavenVersion>
             <requireReleaseDeps>
               <!--  Don't allow releases with snapshop deps or parents -->
@@ -340,7 +341,7 @@
       <plugin>
         <groupId>org.codehaus.gmavenplus</groupId>
         <artifactId>gmavenplus-plugin</artifactId>
-        <version>1.12.1</version>
+        <version>3.0.2</version>
         <executions>
           <execution>
             <goals>
