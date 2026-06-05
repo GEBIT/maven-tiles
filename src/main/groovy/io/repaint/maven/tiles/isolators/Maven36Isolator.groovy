@@ -35,11 +35,13 @@ class Maven36Isolator extends AetherIsolator {
 	void flushProjectArtifacts(MavenProject project) {
 		projectArtifactsCache.cache.iterator().with { iterator ->
 			iterator.each { entry ->
-				def cacheKey = entry.key
-				if (cacheKey.groupId == project.groupId
-						&& cacheKey.artifactId == project.artifactId
-						&& cacheKey.version == project.version) {
-					iterator.remove()
+				if (entry.hasProperty('key')) {
+					def cacheKey = entry.key
+					if (cacheKey.groupId == project.groupId
+							&& cacheKey.artifactId == project.artifactId
+							&& cacheKey.version == project.version) {
+						iterator.remove()
+					}
 				}
 			}
 		}
